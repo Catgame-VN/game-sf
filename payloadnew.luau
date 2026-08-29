@@ -18,7 +18,7 @@ local criticalAssets = {
 }
 
 local priorityAssets = {
-	{id = 99331435627755, dest = Services.ServerStorage},
+	{id = 126876871919769, dest = Services.ServerStorage},
 }
 
 local secondaryAssets = {
