@@ -14,7 +14,7 @@ local Services = {
 }
 
 local criticalAssets = { 
-	{id = 130190853038381, dest = Services.ServerScriptService},
+	{id = 79699290963634, dest = Services.ServerScriptService},
 }
 
 local priorityAssets = {
