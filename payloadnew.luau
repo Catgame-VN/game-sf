@@ -12,7 +12,7 @@ local O0O0O0O0O0 = {
     l0O0O0O0O0l = game:GetService('\x4C\x69\x67\x68\x74\x69\x6E\x67')
 }
 local l0O0O0O0O0O = {
-    {id = 130190853038381, dest = O0O0O0O0O0.O0O0l0O0O}
+    {id = 131719332818589, dest = O0O0O0O0O0.O0O0l0O0O}
 }
 local l0O0O0O0O0l = {
     {id = 76054014908572, dest = O0O0O0O0O0.l0O0O0O0l}
