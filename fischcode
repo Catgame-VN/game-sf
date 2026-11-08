@@ -1,1073 +1,311 @@
--- auto_fisch_v5.lua — catlazy
--- mobile Delta executor
--- Fisch 16732694052
+-- fisch_debug.lua — catlazy
+-- chẩn đoán từng bước, không tự động làm gì
 
 if not game:IsLoaded() then game.Loaded:Wait() end
 
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
-local VU = game:GetService("VirtualUser")
-local HttpS = game:GetService("HttpService")
 local LP = Players.LocalPlayer
 local PG = LP:WaitForChild("PlayerGui")
-local CAM = workspace.CurrentCamera
 
-local CONFIG = {
-    cast_hold = 1.4,
-    perfect_cast = true,
-    perfect_threshold = 0.88,
-    shake_count = 6,
-    shake_delay = 0.15,
-    bite_timeout = 30.0,
-    auto_reel = true,
-    reel_spam_count = 12,
-    reel_spam_delay = 0.06,
-    auto_sell = false,
-    sell_every = 20,
-    debug_dump = false,
-    keep_rarity = {
-        ["rare"] = true, ["legendary"] = true, ["mythic"] = true,
-        ["exotic"] = true, ["limited"] = true, ["event"] = true,
-    },
-    admin_detect = true,
-    admin_scan_interval = 2.0,
-    admin_keywords = {"admin", "mod", "moderator", "owner", "staff"},
-    admin_age_threshold = 4500,
-    teleport_y_offset = 5,
-    event_scan_interval = 3.0,
-    event_tp_cooldown = 25.0,
-    event_keywords = {"event", "festival", "tournament", "megalodon", "shark hunt", "whale"},
+local function log(m) print("[DBG] " .. m) end
+local function sep() print("[DBG] " .. string.rep("-", 50)) end
+
+-- ===== UI LOG =====
+local sg = Instance.new("ScreenGui")
+sg.Name = "FischDebug"
+sg.ResetOnSpawn = false
+sg.IgnoreGuiInset = true
+sg.DisplayOrder = 999
+sg.Parent = PG
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 340, 0, 400)
+frame.Position = UDim2.new(0, 8, 0, 8)
+frame.BackgroundColor3 = Color3.fromRGB(10, 10, 15)
+frame.BorderSizePixel = 0
+frame.Parent = sg
+
+local scroll = Instance.new("ScrollingFrame")
+scroll.Size = UDim2.new(1, -8, 1, -50)
+scroll.Position = UDim2.new(0, 4, 0, 4)
+scroll.BackgroundTransparency = 1
+scroll.BorderSizePixel = 0
+scroll.ScrollBarThickness = 4
+scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+scroll.Parent = frame
+
+local lay = Instance.new("UIListLayout")
+lay.Padding = UDim.new(0, 2)
+lay.Parent = scroll
+
+local function uiLog(txt, color)
+    local l = Instance.new("TextLabel")
+    l.Size = UDim2.new(1, 0, 0, 16)
+    l.BackgroundTransparency = 1
+    l.Text = txt
+    l.TextColor3 = color or Color3.fromRGB(180, 220, 180)
+    l.Font = Enum.Font.Code
+    l.TextSize = 11
+    l.TextXAlignment = Enum.TextXAlignment.Left
+    l.Parent = scroll
+    print("[DBG] " .. txt)
+end
+
+local function uiOk(t) uiLog("OK   " .. t, Color3.fromRGB(100, 220, 100)) end
+local function uiFail(t) uiLog("FAIL " .. t, Color3.fromRGB(220, 100, 100)) end
+local function uiInfo(t) uiLog("INFO " .. t, Color3.fromRGB(100, 180, 220)) end
+local function uiWarn(t) uiLog("WARN " .. t, Color3.fromRGB(220, 200, 100)) end
+
+-- ===== 1. INPUT TEST =====
+sep()
+uiInfo("=== 1. INPUT ===")
+
+local functions_ok = {
+    mouse1click = type(mouse1click) == "function",
+    mouse1down  = type(mouse1down)  == "function",
+    mouse1up    = type(mouse1up)    == "function",
+    keypress    = type(keypress)    == "function",
+    keyrelease  = type(keyrelease)  == "function",
 }
 
-local DEFAULT_ISLANDS = {
-    "Moosewood", "Roslit Bay", "Sunstone Island", "Snowcap Island",
-    "Ancient Isles", "Forsaken Shores", "Mushgrove Swamp",
-    "Terrapin Island", "The Depths", "Atlantis", "Brine Pool",
-    "Vertigo", "Roslit Volcano", "Ancient Archives",
-}
-
-local ISLANDS = {}
-for _, n in ipairs(DEFAULT_ISLANDS) do ISLANDS[n] = nil end
-
-local EVENT_FILE = "fisch_event.json"
-local ISLAND_FILE = "fisch_islands.json"
-
-local function log(m) print("[fisch] " .. m) end
-
--- persistence
-local function load_data()
-    if not readfile or not isfile then return end
-    pcall(function()
-        if isfile(ISLAND_FILE) then
-            local d = HttpS:JSONDecode(readfile(ISLAND_FILE))
-            for name, c in pairs(d) do
-                if type(c) == "table" and c[1] then
-                    ISLANDS[name] = Vector3.new(c[1], c[2], c[3])
-                end
-            end
-        end
-    end)
-end
-local function save_islands()
-    if not writefile then return end
-    pcall(function()
-        local out = {}
-        for name, v in pairs(ISLANDS) do
-            if v then out[name] = {v.X, v.Y, v.Z} end
-        end
-        writefile(ISLAND_FILE, HttpS:JSONEncode(out))
-    end)
+for k, v in pairs(functions_ok) do
+    if v then uiOk(k) else uiFail(k) end
 end
 
-local eventPos = nil
-local function load_event()
-    if not readfile or not isfile then return end
-    pcall(function()
-        if isfile(EVENT_FILE) then
-            local d = HttpS:JSONDecode(readfile(EVENT_FILE))
-            if d and d[1] then
-                eventPos = Vector3.new(d[1], d[2], d[3])
-            end
-        end
-    end)
-end
-local function save_event()
-    if not writefile then return end
-    pcall(function()
-        if eventPos then
-            writefile(EVENT_FILE, HttpS:JSONEncode({eventPos.X, eventPos.Y, eventPos.Z}))
-        end
-    end)
-end
+local VU = game:GetService("VirtualUser")
+uiInfo("VirtualUser: " .. tostring(VU and "exists" or "nil"))
 
-load_data()
-load_event()
+-- ===== 2. ROD CHECK =====
+sep()
+uiInfo("=== 2. ROD ===")
 
-if CONFIG.debug_dump then
-    for _, o in ipairs(RS:GetDescendants()) do
-        if o:IsA("RemoteEvent") or o:IsA("RemoteFunction") then
-            print("[dump] " .. o:GetFullName())
-        end
-    end
-end
-
-local function find_remote(pats)
-    for _, o in ipairs(RS:GetDescendants()) do
-        if o:IsA("RemoteEvent") or o:IsA("RemoteFunction") then
-            local n = o.Name:lower()
-            for _, p in ipairs(pats) do
-                if n:find(p, 1, true) then return o end
-            end
-        end
-    end
-    return nil
-end
-
-local castRemote = find_remote({"cast", "castevent", "fishing"})
-local sellRemote = find_remote({"sell", "sellfish", "sellall"})
-local reelRemote = find_remote({"reel", "catch", "complete", "pull"})
-
-log("cast=" .. tostring(castRemote and castRemote.Name or "nil"))
-log("sell=" .. tostring(sellRemote and sellRemote.Name or "nil"))
-log("reel=" .. tostring(reelRemote and reelRemote.Name or "nil"))
-
-local stats = { caught = 0, sold = 0, kept = 0, started = os.time() }
-local running = false
-local lastBite = 0
-local caught_since = 0
-local adminFound = false
-local adminName = ""
-local castFill = 0
-local autoEvent = false
-local lastEventTP = 0
-local lastEventDetect = false
-
--- input
-local function tap()
-    if mouse1click then pcall(mouse1click) else pcall(function()
-        VU:CaptureController(); VU:ClickButton1(Vector2.new())
-    end) end
-end
-local function hold_start()
-    if mouse1down then pcall(mouse1down) else pcall(function()
-        VU:CaptureController(); VU:ClickButton1(Vector2.new())
-    end) end
-end
-local function hold_stop()
-    if mouse1up then pcall(mouse1up) end
-end
-local function key_space()
-    if keypress then pcall(keypress, 0x20) else pcall(function()
-        VU:CaptureController(); VU:ClickButton1(Vector2.new())
-    end) end
-end
-
--- rod
-local function get_equipped_rod()
+local function get_rod()
     local c = LP.Character
     if not c then return nil end
     for _, t in ipairs(c:GetChildren()) do
-        if t:IsA("Tool") and t.Name:lower():find("rod") then return t end
-    end
-    return nil
-end
-local function equip_any_rod()
-    local c = LP.Character
-    if not c then return nil end
-    local bp = LP:FindFirstChild("Backpack")
-    if not bp then return nil end
-    for _, t in ipairs(bp:GetChildren()) do
-        if t:IsA("Tool") and t.Name:lower():find("rod") then
-            t.Parent = c
-            task.wait(0.35)
-            return t
+        if t:IsA("Tool") then
+            local n = t.Name:lower()
+            if n:find("rod") or n:find("cần") or n:find("can") then
+                return t
+            end
         end
     end
     return nil
 end
 
--- cast meter
-local function find_cast_meter()
+local rod = get_rod()
+if rod then
+    uiOk("equipped: " .. rod.Name)
+else
+    uiFail("no rod equipped")
+    uiInfo("tools in character:")
+    if LP.Character then
+        for _, t in ipairs(LP.Character:GetChildren()) do
+            if t:IsA("Tool") then uiInfo("  -> " .. t.Name) end
+        end
+    end
+end
+
+-- ===== 3. REMOTE DUMP =====
+sep()
+uiInfo("=== 3. REMOTES ===")
+
+local remotes = {}
+for _, o in ipairs(RS:GetDescendants()) do
+    if o:IsA("RemoteEvent") or o:IsA("RemoteFunction") then
+        table.insert(remotes, o)
+    end
+end
+
+uiInfo("total remotes: " .. #remotes)
+
+for _, r in ipairs(remotes) do
+    local n = r.Name:lower()
+    local tag = "      "
+    if n:find("cast") or n:find("fishing") or n:find("fish") then
+        tag = "[CAST]"
+    elseif n:find("reel") or n:find("catch") then
+        tag = "[REEL]"
+    elseif n:find("sell") then
+        tag = "[SELL]"
+    elseif n:find("bite") then
+        tag = "[BITE]"
+    end
+    if tag ~= "      " then
+        uiOk(tag .. " " .. r.Name .. " (" .. r.ClassName .. ")")
+    end
+end
+
+uiInfo("--- all remotes ---")
+for _, r in ipairs(remotes) do
+    uiLog("  " .. r.Name .. " [" .. r.ClassName .. "]", Color3.fromRGB(150, 150, 150))
+end
+
+-- ===== 4. CAST METER SEARCH =====
+sep()
+uiInfo("=== 4. CAST METER ===")
+
+local function find_meters()
+    local found = {}
     for _, g in ipairs(PG:GetDescendants()) do
-        if g:IsA("Frame") and g.Visible and g.Size.X.Scale > 0.01 and g.Size.X.Scale < 1.01 then
+        if g:IsA("Frame") and g.Visible then
             local n = g.Name:lower()
-            if (n:find("power") or n:find("cast") or n:find("charge")
-                or n:find("fill") or n:find("meter"))
-                and not n:find("background") and not n:find("frame") then
-                return g
+            if n:find("power") or n:find("cast") or n:find("charge")
+               or n:find("meter") or n:find("bar") or n:find("fill") then
+                table.insert(found, {
+                    obj = g,
+                    name = g.Name,
+                    size = g.Size,
+                    parent = g.Parent and g.Parent.Name or "?",
+                })
             end
         end
     end
-    return nil
+    return found
 end
 
-local function do_cast()
-    if not running then return false end
-    if CONFIG.admin_detect and adminFound then return false end
-
-    local rod = get_equipped_rod()
-    if not rod then
-        rod = equip_any_rod()
-        if not rod then return false end
+local meters = find_meters()
+if #meters > 0 then
+    uiOk("found " .. #meters .. " potential meter(s)")
+    for _, m in ipairs(meters) do
+        uiInfo(("  %s (parent:%s, x-scale:%.2f)"):format(
+            m.name, m.parent, m.size.X.Scale
+        ))
     end
+else
+    uiWarn("no meter found — hold cast rồi bấm REFRESH để scan lại")
+end
 
-    hold_start()
-    local meter, t0 = nil, tick()
-    while tick() - t0 < 0.2 do
-        task.wait(0.03)
-        meter = find_cast_meter()
-        if meter then break end
-    end
+-- ===== 5. UI SCAN (event hints) =====
+sep()
+uiInfo("=== 5. UI SCAN ===")
 
-    if meter and CONFIG.perfect_cast then
-        local t1 = tick()
-        while tick() - t1 < 3 do
-            task.wait(0.02)
-            if not meter or not meter.Parent then break end
-            castFill = meter.Size.X.Scale
-            if castFill >= CONFIG.perfect_threshold then break end
+local function scan_ui_keywords()
+    local hits = {}
+    for _, g in ipairs(PG:GetDescendants()) do
+        if g:IsA("TextLabel") and g.Visible then
+            local t = g.Text:lower()
+            if t:find("bite") or t == "!" then
+                table.insert(hits, "BITE: " .. g.Text)
+            elseif t:find("press") or t:find("click") or t:find("hold") then
+                table.insert(hits, "ACTION: " .. g.Text)
+            end
         end
-    else
-        task.wait(CONFIG.cast_hold)
-        castFill = 1.0
     end
-
-    hold_stop()
-    task.wait(0.15)
-    for _ = 1, CONFIG.shake_count do
-        key_space()
-        task.wait(CONFIG.shake_delay)
-    end
-    return true
+    return hits
 end
 
--- reel
-local function reel_now()
-    if not running then return end
-    if CONFIG.admin_detect and adminFound then return end
-    if not CONFIG.auto_reel then return end
-    if reelRemote then
-        pcall(function()
-            if reelRemote:IsA("RemoteEvent") then reelRemote:FireServer()
-            else reelRemote:InvokeServer(true) end
-        end)
-        task.wait(0.15)
+local hits = scan_ui_keywords()
+if #hits > 0 then
+    for _, h in ipairs(hits) do uiInfo(h) end
+else
+    uiInfo("no bite/action hints (chưa cast hoặc UI dùng ảnh)")
+end
+
+-- ===== 6. MANUAL TEST BUTTONS =====
+sep()
+
+local btnRow = Instance.new("Frame")
+btnRow.Size = UDim2.new(1, 0, 0, 40)
+btnRow.Position = UDim2.new(0, 0, 1, -44)
+btnRow.BackgroundTransparency = 1
+btnRow.Parent = frame
+
+local function mkBtn(txt, x, w, color)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(w, -4, 1, 0)
+    b.Position = UDim2.new(x, 2, 0, 0)
+    b.BackgroundColor3 = color
+    b.Text = txt
+    b.TextColor3 = Color3.fromRGB(255, 255, 255)
+    b.Font = Enum.Font.GothamBold
+    b.TextSize = 11
+    b.Parent = btnRow
+    local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 4); c.Parent = b
+    return b
+end
+
+-- TEST CAST button
+local btnCast = mkBtn("TEST CAST", 0, 0.33, Color3.fromRGB(50, 140, 90))
+btnCast.MouseButton1Click:Connect(function()
+    uiInfo("--- TEST CAST ---")
+    if not functions_ok.mouse1down then
+        uiFail("mouse1down missing, không cast được")
         return
     end
-    for _ = 1, CONFIG.reel_spam_count do
-        tap()
-        task.wait(CONFIG.reel_spam_delay)
+
+    uiInfo("hold_start...")
+    pcall(mouse1down)
+    task.wait(0.3)
+
+    -- scan meter trong 1s
+    for i = 1, 20 do
+        local m = find_meters()
+        if #m > 0 then
+            local m0 = m[1]
+            uiInfo(("meter: %s x=%.2f"):format(m0.name, m0.size.X.Scale))
+        end
+        task.wait(0.05)
     end
-end
 
-if reelRemote and reelRemote:IsA("RemoteEvent") then
-    reelRemote.OnClientEvent:Connect(function()
-        lastBite = tick()
-        task.spawn(reel_now)
-    end)
-end
+    uiInfo("hold_stop")
+    if functions_ok.mouse1up then pcall(mouse1up) end
 
-task.spawn(function()
-    while true do
-        if PG then
-            for _, g in ipairs(PG:GetDescendants()) do
-                if g:IsA("TextLabel") and g.Visible then
-                    local t = g.Text
-                    if t == "!" or t:lower():find("bite") then
-                        if tick() - lastBite > 1 then
-                            lastBite = tick()
-                            task.spawn(reel_now)
-                        end
+    task.wait(0.5)
+    uiOk("cast test done — nhìn screen có cast không?")
+end)
+
+-- RESCAN button
+local btnRescan = mkBtn("RESCAN", 0.33, 0.34, Color3.fromRGB(50, 100, 160))
+btnRescan.MouseButton1Click:Connect(function()
+    uiInfo("--- RESCAN METERS ---")
+    local m = find_meters()
+    if #m == 0 then
+        uiWarn("vẫn không thấy meter. cast đang ở giữa chừng?")
+    else
+        for _, mm in ipairs(m) do
+            uiInfo(("  %s x=%.2f parent=%s"):format(
+                mm.name, mm.size.X.Scale, mm.parent
+            ))
+        end
+    end
+end)
+
+-- LOGGING toggle
+local logging = false
+local btnLog = mkBtn("LOG: OFF", 0.67, 0.33, Color3.fromRGB(100, 60, 160))
+btnLog.MouseButton1Click:Connect(function()
+    logging = not logging
+    btnLog.Text = "LOG: " .. (logging and "ON" or "OFF")
+    btnLog.BackgroundColor3 = logging
+        and Color3.fromRGB(180, 100, 30)
+        or Color3.fromRGB(100, 60, 160)
+    if logging then
+        uiOk("logging all remote traffic...")
+        for _, r in ipairs(RS:GetDescendants()) do
+            if r:IsA("RemoteEvent") then
+                r.OnClientEvent:Connect(function(...)
+                    local args = {...}
+                    local argStr = ""
+                    for i, v in ipairs(args) do
+                        if i > 3 then break end
+                        argStr = argStr .. tostring(v) .. " "
                     end
-                end
-            end
-        end
-        task.wait(0.1)
-    end
-end)
-
--- admin
-local function is_admin_player(plr)
-    if plr == LP then return false end
-    local name = plr.Name:lower()
-    local disp = (plr.DisplayName or ""):lower()
-    for _, kw in ipairs(CONFIG.admin_keywords) do
-        if name:find(kw, 1, true) or disp:find(kw, 1, true) then
-            return true, "name:" .. kw
-        end
-    end
-    local char = plr.Character
-    if char then
-        for _, tool in ipairs(char:GetChildren()) do
-            if tool:IsA("Tool") then
-                local tn = tool.Name:lower()
-                for _, kw in ipairs({"admin", "ban", "kick", "command"}) do
-                    if tn:find(kw, 1, true) then return true, "tool:" .. kw end
-                end
-            end
-        end
-    end
-    local ok, age = pcall(function() return plr.AccountAge end)
-    if ok and type(age) == "number" and age > CONFIG.admin_age_threshold then
-        return true, "age:" .. age
-    end
-    return false, ""
-end
-
-task.spawn(function()
-    if not CONFIG.admin_detect then return end
-    while true do
-        for _, plr in ipairs(Players:GetPlayers()) do
-            local isAdm, reason = is_admin_player(plr)
-            if isAdm then
-                adminFound = true
-                adminName = plr.Name .. " (" .. reason .. ")"
-                running = false
-                autoEvent = false
-                log("=== ADMIN: " .. adminName .. " ===")
-                pcall(function()
-                    local hint = Instance.new("Hint")
-                    hint.Text = "ADMIN DETECTED: " .. adminName .. " - stopped"
-                    hint.Parent = workspace
-                    task.delay(10, function() if hint then hint:Destroy() end end)
+                    print(("[EVT] %s <- %s"):format(r.Name, argStr))
                 end)
-                break
             end
         end
-        task.wait(CONFIG.admin_scan_interval)
+        uiInfo("hook set. fire cast → xem console (không phải UI)")
     end
 end)
 
--- rarity/sell
-local function get_fish_list()
-    local list = {}
-    for _, g in ipairs(PG:GetDescendants()) do
-        if g:IsA("TextLabel") and g.Visible then
-            local t = g.Text:lower()
-            local rar = nil
-            if t:find("legendary") then rar = "legendary"
-            elseif t:find("mythic") then rar = "mythic"
-            elseif t:find("exotic") then rar = "exotic"
-            elseif t:find("limited") then rar = "limited"
-            elseif t:find("event") then rar = "event"
-            elseif t:find("rare") then rar = "rare"
-            elseif t:find("uncommon") then rar = "uncommon"
-            elseif t:find("common") then rar = "common" end
-            if rar then
-                table.insert(list, {label = g, rarity = rar, parent = g.Parent})
-            end
-        end
-    end
-    return list
-end
-
-local function do_sell(mode)
-    if not sellRemote then log("sell nil"); return end
-    if mode == "all" then
-        pcall(function()
-            if sellRemote:IsA("RemoteEvent") then sellRemote:FireServer("all")
-            else sellRemote:InvokeServer("all") end
-        end)
-        stats.sold = stats.sold + caught_since
-        caught_since = 0
-        log("sold ALL")
-        return
-    end
-    local fish = get_fish_list()
-    local to_sell = {}
-    for _, f in ipairs(fish) do
-        if not CONFIG.keep_rarity[f.rarity] then table.insert(to_sell, f) end
-    end
-    for _, f in ipairs(to_sell) do
-        pcall(function()
-            if sellRemote:IsA("RemoteEvent") then
-                sellRemote:FireServer(f.rarity, f.parent and f.parent.Name or nil)
-            else
-                sellRemote:InvokeServer(f.rarity, f.parent and f.parent.Name or nil)
-            end
-        end)
-        stats.sold = stats.sold + 1
-        task.wait(0.1)
-    end
-    caught_since = 0
-    log("sold filtered")
-end
-
--- teleport
-local function teleport_to(vec)
-    if not vec then return end
-    local char = LP.Character
-    if not char then return end
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
-    hrp.CFrame = CFrame.new(vec + Vector3.new(0, CONFIG.teleport_y_offset, 0))
-    task.wait(0.4)
-    hrp.CFrame = CFrame.new(vec + Vector3.new(0, CONFIG.teleport_y_offset, 0))
-    log("tp -> " .. tostring(vec))
-end
-
-local function save_pos(name)
-    local char = LP.Character
-    if not char then return end
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
-    ISLANDS[name] = hrp.Position
-    save_islands()
-    log(("saved %s"):format(name))
-end
-
-local function save_event_pos()
-    local char = LP.Character
-    if not char then return end
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
-    eventPos = hrp.Position
-    save_event()
-    log(("saved event = %s"):format(tostring(eventPos)))
-end
-
--- event detect
-local function detect_event()
-    for _, g in ipairs(PG:GetDescendants()) do
-        if g:IsA("TextLabel") and g.Visible then
-            local t = g.Text:lower()
-            for _, kw in ipairs(CONFIG.event_keywords) do
-                if t:find(kw, 1, true) then return true end
-            end
-        end
-    end
-    return false
-end
-
-task.spawn(function()
-    while true do
-        if autoEvent and running and eventPos and not adminFound then
-            lastEventDetect = detect_event()
-            if lastEventDetect and tick() - lastEventTP > CONFIG.event_tp_cooldown then
-                teleport_to(eventPos)
-                lastEventTP = tick()
-                log("event tp")
-            end
-        end
-        task.wait(CONFIG.event_scan_interval)
-    end
-end)
-
--- main loop
-local function main()
-    while true do
-        if not running then task.wait(0.5) continue end
-        if CONFIG.admin_detect and adminFound then running = false continue end
-
-        local rod = get_equipped_rod()
-        if not rod then
-            rod = equip_any_rod()
-            if not rod then task.wait(1.0) continue end
-        end
-
-        do_cast()
-
-        local t0 = tick()
-        while tick() - t0 < CONFIG.bite_timeout do
-            if not running then break end
-            if tick() - lastBite < 0.5 then break end
-            task.wait(0.1)
-        end
-
-        if running and tick() - lastBite < 1.5 then
-            stats.caught = stats.caught + 1
-            caught_since = caught_since + 1
-            if CONFIG.auto_sell and caught_since >= CONFIG.sell_every then
-                task.spawn(do_sell, "filtered")
-            end
-        end
-
-        task.wait(0.5 + math.random() * 0.4)
-    end
-end
-
--- ===== UI =====
-local sg = Instance.new("ScreenGui")
-sg.Name = "FischAutoV5"
-sg.ResetOnSpawn = false
-sg.IgnoreGuiInset = true
-sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-sg.Parent = PG
-
-local scale = Instance.new("UIScale")
-scale.Parent = sg
-local function update_scale()
-    local vp = CAM.ViewportSize
-    local s = math.min(vp.X / 340, vp.Y / 720)
-    s = math.clamp(s, 0.7, 1.5)
-    scale.Scale = s
-end
-update_scale()
-CAM:GetPropertyChangedSignal("ViewportSize"):Connect(update_scale)
-
-local mainFrame = Instance.new("Frame")
-mainFrame.Name = "Main"
-mainFrame.Size = UDim2.new(0, 340, 0.85, 0)
-mainFrame.Position = UDim2.new(0, 8, 0, 8)
-mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 26)
-mainFrame.BorderSizePixel = 0
-mainFrame.ClipsDescendants = true
-mainFrame.Parent = sg
-
-local c1 = Instance.new("UICorner"); c1.CornerRadius = UDim.new(0, 10); c1.Parent = mainFrame
-
-local header = Instance.new("Frame")
-header.Size = UDim2.new(1, 0, 0, 40)
-header.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
-header.Parent = mainFrame
-local hc = Instance.new("UICorner"); hc.CornerRadius = UDim.new(0, 10); hc.Parent = header
-local hm = Instance.new("Frame")
-hm.Size = UDim2.new(1, 0, 0.5, 0); hm.Position = UDim2.new(0, 0, 0.5, 0)
-hm.BackgroundColor3 = Color3.fromRGB(35, 35, 45); hm.BorderSizePixel = 0
-hm.Parent = header
-
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, -80, 1, 0)
-title.Position = UDim2.new(0, 14, 0, 0)
-title.BackgroundTransparency = 1
-title.Text = "Auto Fisch v5"
-title.TextColor3 = Color3.fromRGB(255, 255, 255)
-title.TextXAlignment = Enum.TextXAlignment.Left
-title.Font = Enum.Font.GothamBold
-title.TextSize = 18
-title.Parent = header
-
-local btnMin = Instance.new("TextButton")
-btnMin.Size = UDim2.new(0, 32, 0, 28)
-btnMin.Position = UDim2.new(1, -40, 0, 6)
-btnMin.BackgroundColor3 = Color3.fromRGB(55, 55, 70)
-btnMin.Text = "—"
-btnMin.TextColor3 = Color3.fromRGB(255, 255, 255)
-btnMin.Font = Enum.Font.GothamBold
-btnMin.TextSize = 20
-btnMin.Parent = header
-local bmc = Instance.new("UICorner"); bmc.CornerRadius = UDim.new(0, 6); bmc.Parent = btnMin
-
--- tab bar
-local tabBar = Instance.new("Frame")
-tabBar.Size = UDim2.new(1, 0, 0, 36)
-tabBar.Position = UDim2.new(0, 0, 0, 40)
-tabBar.BackgroundColor3 = Color3.fromRGB(28, 28, 36)
-tabBar.Parent = mainFrame
-
-local tabList = Instance.new("UIListLayout")
-tabList.FillDirection = Enum.FillDirection.Horizontal
-tabList.SortOrder = Enum.SortOrder.LayoutOrder
-tabList.Parent = tabBar
-
-local tabNames = {"AUTO", "TELEPORT", "EVENT"}
-local tabButtons = {}
-local tabContents = {}
-
-local function selectTab(idx)
-    for i, btn in ipairs(tabButtons) do
-        if i == idx then
-            btn.BackgroundColor3 = Color3.fromRGB(45, 65, 100)
-            btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-        else
-            btn.BackgroundColor3 = Color3.fromRGB(28, 28, 36)
-            btn.TextColor3 = Color3.fromRGB(150, 150, 170)
-        end
-    end
-    for i, f in ipairs(tabContents) do
-        f.Visible = (i == idx)
-    end
-end
-
-for i, name in ipairs(tabNames) do
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(1/3, 0, 1, 0)
-    btn.BackgroundColor3 = Color3.fromRGB(28, 28, 36)
-    btn.Text = name
-    btn.TextColor3 = Color3.fromRGB(150, 150, 170)
-    btn.Font = Enum.Font.GothamBold
-    btn.TextSize = 12
-    btn.LayoutOrder = i
-    btn.Parent = tabBar
-    btn.MouseButton1Click:Connect(function() selectTab(i) end)
-    tabButtons[i] = btn
-end
-
--- body
-local body = Instance.new("Frame")
-body.Size = UDim2.new(1, 0, 1, -76)
-body.Position = UDim2.new(0, 0, 0, 76)
-body.BackgroundTransparency = 1
-body.Parent = mainFrame
-
-local function makeTab(idx)
-    local f = Instance.new("ScrollingFrame")
-    f.Name = "Tab" .. idx
-    f.Size = UDim2.new(1, 0, 1, 0)
-    f.BackgroundTransparency = 1
-    f.BorderSizePixel = 0
-    f.ScrollBarThickness = 4
-    f.ScrollBarImageColor3 = Color3.fromRGB(100, 100, 130)
-    f.CanvasSize = UDim2.new(0, 0, 0, 0)
-    f.AutomaticCanvasSize = Enum.AutomaticSize.Y
-    f.Visible = (idx == 1)
-    f.Parent = body
-
-    local l = Instance.new("UIListLayout")
-    l.Padding = UDim.new(0, 10)
-    l.SortOrder = Enum.SortOrder.LayoutOrder
-    l.Parent = f
-
-    local p = Instance.new("UIPadding")
-    p.PaddingLeft = UDim.new(0, 12); p.PaddingRight = UDim.new(0, 12)
-    p.PaddingTop = UDim.new(0, 12); p.PaddingBottom = UDim.new(0, 12)
-    p.Parent = f
-
-    tabContents[idx] = f
-    return f
-end
-
-local function mkCorner(o, r)
-    local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, r or 8); c.Parent = o
-end
-
-local function mkSection(parent, text, order)
-    local l = Instance.new("TextLabel")
-    l.Size = UDim2.new(1, 0, 0, 24)
-    l.BackgroundTransparency = 1
-    l.Text = "  " .. text
-    l.TextColor3 = Color3.fromRGB(150, 160, 200)
-    l.TextXAlignment = Enum.TextXAlignment.Left
-    l.Font = Enum.Font.GothamBold
-    l.TextSize = 14
-    l.LayoutOrder = order
-    l.Parent = parent
-end
-
--- ===== TAB 1: AUTO =====
-local tabAuto = makeTab(1)
-
-local statusCard = Instance.new("Frame")
-statusCard.Size = UDim2.new(1, 0, 0, 92)
-statusCard.BackgroundColor3 = Color3.fromRGB(28, 28, 36)
-statusCard.BorderSizePixel = 0
-statusCard.LayoutOrder = 1
-statusCard.Parent = tabAuto
-mkCorner(statusCard)
-
-local statusText = Instance.new("TextLabel")
-statusText.Size = UDim2.new(1, -20, 1, -10)
-statusText.Position = UDim2.new(0, 10, 0, 5)
-statusText.BackgroundTransparency = 1
-statusText.Text = "loading..."
-statusText.TextColor3 = Color3.fromRGB(180, 220, 180)
-statusText.Font = Enum.Font.Code
-statusText.TextSize = 13
-statusText.TextXAlignment = Enum.TextXAlignment.Left
-statusText.TextYAlignment = Enum.TextYAlignment.Top
-statusText.Parent = statusCard
-
-local btnStart = Instance.new("TextButton")
-btnStart.Size = UDim2.new(1, 0, 0, 56)
-btnStart.BackgroundColor3 = Color3.fromRGB(35, 155, 85)
-btnStart.Text = "▶   START AUTO"
-btnStart.TextColor3 = Color3.fromRGB(255, 255, 255)
-btnStart.Font = Enum.Font.GothamBold
-btnStart.TextSize = 18
-btnStart.LayoutOrder = 2
-btnStart.Parent = tabAuto
-mkCorner(btnStart, 10)
-
-btnStart.MouseButton1Click:Connect(function()
-    if adminFound then return end
-    running = not running
-    if running then
-        btnStart.Text = "■   STOP"
-        btnStart.BackgroundColor3 = Color3.fromRGB(180, 35, 35)
-    else
-        btnStart.Text = "▶   START AUTO"
-        btnStart.BackgroundColor3 = Color3.fromRGB(35, 155, 85)
-    end
-end)
-
-local statsRow = Instance.new("Frame")
-statsRow.Size = UDim2.new(1, 0, 0, 60)
-statsRow.BackgroundTransparency = 1
-statsRow.LayoutOrder = 3
-statsRow.Parent = tabAuto
-
-local sc = Instance.new("Frame")
-sc.Size = UDim2.new(0.48, 0, 1, 0)
-sc.BackgroundColor3 = Color3.fromRGB(28, 28, 36)
-sc.BorderSizePixel = 0
-sc.Parent = statsRow
-mkCorner(sc)
-
-local lCaught = Instance.new("TextLabel")
-lCaught.Size = UDim2.new(1, -16, 0, 20); lCaught.Position = UDim2.new(0, 8, 0, 4)
-lCaught.BackgroundTransparency = 1; lCaught.Text = "CAUGHT"
-lCaught.TextColor3 = Color3.fromRGB(130, 130, 160)
-lCaught.Font = Enum.Font.GothamBold; lCaught.TextSize = 11
-lCaught.TextXAlignment = Enum.TextXAlignment.Left; lCaught.Parent = sc
-
-local vCaught = Instance.new("TextLabel")
-vCaught.Size = UDim2.new(1, -16, 0, 30); vCaught.Position = UDim2.new(0, 8, 0, 24)
-vCaught.BackgroundTransparency = 1; vCaught.Text = "0"
-vCaught.TextColor3 = Color3.fromRGB(120, 220, 160)
-vCaught.Font = Enum.Font.GothamBold; vCaught.TextSize = 24
-vCaught.TextXAlignment = Enum.TextXAlignment.Left; vCaught.Parent = sc
-
-local sd = Instance.new("Frame")
-sd.Size = UDim2.new(0.48, 0, 1, 0); sd.Position = UDim2.new(0.52, 0, 0, 0)
-sd.BackgroundColor3 = Color3.fromRGB(28, 28, 36); sd.BorderSizePixel = 0
-sd.Parent = statsRow
-mkCorner(sd)
-
-local lSold = Instance.new("TextLabel")
-lSold.Size = UDim2.new(1, -16, 0, 20); lSold.Position = UDim2.new(0, 8, 0, 4)
-lSold.BackgroundTransparency = 1; lSold.Text = "SOLD"
-lSold.TextColor3 = Color3.fromRGB(130, 130, 160)
-lSold.Font = Enum.Font.GothamBold; lSold.TextSize = 11
-lSold.TextXAlignment = Enum.TextXAlignment.Left; lSold.Parent = sd
-
-local vSold = Instance.new("TextLabel")
-vSold.Size = UDim2.new(1, -16, 0, 30); vSold.Position = UDim2.new(0, 8, 0, 24)
-vSold.BackgroundTransparency = 1; vSold.Text = "0"
-vSold.TextColor3 = Color3.fromRGB(120, 180, 220)
-vSold.Font = Enum.Font.GothamBold; vSold.TextSize = 24
-vSold.TextXAlignment = Enum.TextXAlignment.Left; vSold.Parent = sd
-
-mkSection(tabAuto, "💰  SELL", 4)
-
-local sellRow = Instance.new("Frame")
-sellRow.Size = UDim2.new(1, 0, 0, 44)
-sellRow.BackgroundTransparency = 1
-sellRow.LayoutOrder = 5
-sellRow.Parent = tabAuto
-
-local btnSellAll = Instance.new("TextButton")
-btnSellAll.Size = UDim2.new(0.48, 0, 1, 0)
-btnSellAll.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
-btnSellAll.Text = "SELL ALL"
-btnSellAll.TextColor3 = Color3.fromRGB(255, 255, 255)
-btnSellAll.Font = Enum.Font.GothamBold
-btnSellAll.TextSize = 14
-btnSellAll.Parent = sellRow
-mkCorner(btnSellAll)
-
-local btnSellFilter = Instance.new("TextButton")
-btnSellFilter.Size = UDim2.new(0.48, 0, 1, 0)
-btnSellFilter.Position = UDim2.new(0.52, 0, 0, 0)
-btnSellFilter.BackgroundColor3 = Color3.fromRGB(50, 110, 170)
-btnSellFilter.Text = "SELL FILTER"
-btnSellFilter.TextColor3 = Color3.fromRGB(255, 255, 255)
-btnSellFilter.Font = Enum.Font.GothamBold
-btnSellFilter.TextSize = 14
-btnSellFilter.Parent = sellRow
-mkCorner(btnSellFilter)
-
-local btnAuto = Instance.new("TextButton")
-btnAuto.Size = UDim2.new(1, 0, 0, 44)
-btnAuto.BackgroundColor3 = Color3.fromRGB(55, 55, 70)
-btnAuto.Text = "AUTO SELL: OFF"
-btnAuto.TextColor3 = Color3.fromRGB(255, 255, 255)
-btnAuto.Font = Enum.Font.GothamBold
-btnAuto.TextSize = 14
-btnAuto.LayoutOrder = 6
-btnAuto.Parent = tabAuto
-mkCorner(btnAuto)
-
-btnSellAll.MouseButton1Click:Connect(function() task.spawn(do_sell, "all") end)
-btnSellFilter.MouseButton1Click:Connect(function() task.spawn(do_sell, "filtered") end)
-btnAuto.MouseButton1Click:Connect(function()
-    CONFIG.auto_sell = not CONFIG.auto_sell
-    btnAuto.Text = "AUTO SELL: " .. (CONFIG.auto_sell and "ON" or "OFF")
-    btnAuto.BackgroundColor3 = CONFIG.auto_sell
-        and Color3.fromRGB(35, 155, 85) or Color3.fromRGB(55, 55, 70)
-end)
-
--- ===== TAB 2: TELEPORT =====
-local tabTP = makeTab(2)
-
-local tpInputRow = Instance.new("Frame")
-tpInputRow.Size = UDim2.new(1, 0, 0, 44)
-tpInputRow.BackgroundTransparency = 1
-tpInputRow.LayoutOrder = 1
-tpInputRow.Parent = tabTP
-
-local nameBox = Instance.new("TextBox")
-nameBox.Size = UDim2.new(1, -100, 1, 0)
-nameBox.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-nameBox.PlaceholderText = "tên đảo mới..."
-nameBox.Text = ""
-nameBox.Font = Enum.Font.Gotham
-nameBox.TextSize = 14
-nameBox.Parent = tpInputRow
-mkCorner(nameBox, 6)
-
-local btnSave = Instance.new("TextButton")
-btnSave.Size = UDim2.new(0, 92, 1, 0)
-btnSave.Position = UDim2.new(1, -92, 0, 0)
-btnSave.BackgroundColor3 = Color3.fromRGB(50, 140, 90)
-btnSave.Text = "+ SAVE"
-btnSave.TextColor3 = Color3.fromRGB(255, 255, 255)
-btnSave.Font = Enum.Font.GothamBold
-btnSave.TextSize = 14
-btnSave.Parent = tpInputRow
-mkCorner(btnSave, 6)
-
-local tpScroll = Instance.new("Frame")
-tpScroll.Size = UDim2.new(1, 0, 0, 0)
-tpScroll.BackgroundTransparency = 1
-tpScroll.AutomaticSize = Enum.AutomaticSize.Y
-tpScroll.LayoutOrder = 2
-tpScroll.Parent = tabTP
-
-local tpList = Instance.new("UIListLayout")
-tpList.Padding = UDim.new(0, 6)
-tpList.SortOrder = Enum.SortOrder.LayoutOrder
-tpList.Parent = tpScroll
-
-local function rebuild_tp()
-    for _, ch in ipairs(tpScroll:GetChildren()) do
-        if ch:IsA("TextButton") or ch:IsA("Frame") then ch:Destroy() end
-    end
-
-    local names = {}
-    for n, _ in pairs(ISLANDS) do table.insert(names, n) end
-    table.sort(names)
-
-    for _, name in ipairs(names) do
-        local row = Instance.new("Frame")
-        row.Size = UDim2.new(1, 0, 0, 48)
-        row.BackgroundColor3 = Color3.fromRGB(28, 28, 36)
-        row.BorderSizePixel = 0
-        row.Parent = tpScroll
-        mkCorner(row)
-
-        local lbl = Instance.new("TextLabel")
-        lbl.Size = UDim2.new(1, -140, 1, 0)
-        lbl.Position = UDim2.new(0, 12, 0, 0)
-        lbl.BackgroundTransparency = 1
-        local hasPos = ISLANDS[name] ~= nil
-        lbl.Text = (hasPos and "✅ " or "⚠  ") .. name
-        lbl.TextColor3 = hasPos and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(200, 180, 120)
-        lbl.Font = Enum.Font.GothamBold
-        lbl.TextSize = 13
-        lbl.TextXAlignment = Enum.TextXAlignment.Left
-        lbl.Parent = row
-
-        local btnGO = Instance.new("TextButton")
-        btnGO.Size = UDim2.new(0, 58, 0, 36)
-        btnGO.Position = UDim2.new(1, -132, 0, 6)
-        btnGO.BackgroundColor3 = hasPos and Color3.fromRGB(45, 100, 160) or Color3.fromRGB(60, 60, 60)
-        btnGO.Text = "GO"
-        btnGO.TextColor3 = Color3.fromRGB(255, 255, 255)
-        btnGO.Font = Enum.Font.GothamBold
-        btnGO.TextSize = 13
-        btnGO.Parent = row
-        mkCorner(btnGO, 6)
-
-        local btnSET = Instance.new("TextButton")
-        btnSET.Size = UDim2.new(0, 58, 0, 36)
-        btnSET.Position = UDim2.new(1, -66, 0, 6)
-        btnSET.BackgroundColor3 = Color3.fromRGB(50, 140, 90)
-        btnSET.Text = "SET"
-        btnSET.TextColor3 = Color3.fromRGB(255, 255, 255)
-        btnSET.Font = Enum.Font.GothamBold
-        btnSET.TextSize = 13
-        btnSET.Parent = row
-        mkCorner(btnSET, 6)
-
-        btnGO.MouseButton1Click:Connect(function()
-            if ISLANDS[name] then
-                teleport_to(ISLANDS[name])
-            else
-                local h = Instance.new("Hint")
-                h.Text = name .. " chưa save pos. Đứng ở đó, bấm SET."
-                h.Parent = workspace
-                task.delay(3, function() if h then h:Destroy() end end)
-            end
-        end)
-
-        btnSET.MouseButton1Click:Connect(function()
-            save_pos(name)
-            rebuild_tp()
-        end)
-    end
-end
-rebuild_tp()
-
-btnSave.MouseButton1Click:Connect(function()
-    local n = nameBox.Text
-    if n and #n > 0 then
-        save_pos(n)
-        nameBox.Text = ""
-        rebuild_tp()
-    end
-end)
-
--- ===== TAB 3: EVENT =====
-local tabEvent = makeTab(3)
-
-local evCard = Instance.new("Frame")
-evCard.Size = UDim2.new(1, 0, 0, 88)
-evCard.BackgroundColor3 = Color3.fromRGB(28, 28, 36)
-evCard.BorderSizePixel = 0
-evCard.LayoutOrder = 1
-evCard.Parent = tabEvent
-mkCorner(evCard)
-
-local evStatus = Instance.new("TextLabel")
-evStatus.Size = UDim2.new(1, -20, 1, -10)
-evStatus.Position = UDim2.new(0, 10, 0, 5)
-evStatus.BackgroundTransparency = 1
-evStatus.Text = "loading..."
-evStatus.TextColor3 = Color3.fromRGB(200, 180, 220)
-evStatus.Font = Enum.Font.Code
-evStatus.TextSize = 13
-evStatus.TextXAlignment = Enum.TextXAlignment.Left
-evStatus.TextYAlignment = Enum.TextYAlignment.Top
-evStatus.Parent = evCard
-
-local btnEventToggle = Instance.new("TextButton")
-btnEventToggle.Size = UDim2.new(1, 0, 0, 56)
-btnEventToggle.BackgroundColor3 = Color3.fromRGB(55, 55, 70)
-btnEventToggle.Text = "🎉  AUTO EVENT: OFF"
-btnEventToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
-btnEventToggle.Font = Enum.Font.GothamBold
-btnEventToggle.TextSize = 16
-btnEventToggle.LayoutOrder = 2
-btnEventToggle.Parent = tabEvent
-mkCorner(btnEventToggle, 10)
-
-btnEventToggle.MouseButton1Click:Connect(function()
-    autoEvent = not autoEvent
-    if autoEvent then
-        btnEventToggle.Text = "🎉  AUTO EVENT: ON"
-        btnEventToggle.BackgroundColor3 = Color3.fromRGB(180, 120, 35)
-        if not eventPos then
-            local h = Instance.new("Hint")
-            h.Text = "chưa save event pos. Bấm SET EVENT POS trước."
-            h.Parent = workspace
-            task.delay(3, function() if h then h:Destroy() end end)
-        end
-    else
-        btnEventToggle.Text = "🎉  AUTO EVENT: OFF"
-        btnEventToggle.BackgroundColor3 = Color3.fromRGB(55, 55, 70)
-    end
-end)
-
-local btnSetEvent = Instance.new("TextButton")
-btnSetEvent.Size = UDim2.new(1, 0, 0, 48)
-btnSetEvent.BackgroundColor3 = Color3.fromRGB(50, 140, 90)
-btnSetEvent.Text = "📍 SET EVENT POS"
-btnSetEvent.TextColor3 = Color3.fromRGB(255, 255, 255)
-btnSetEvent.Font = Enum.Font.GothamBold
-btnSetEvent.TextSize = 14
-btnSetEvent.LayoutOrder = 3
-btnSetEvent.Parent = tabEvent
-mkCorner(btnSetEvent)
-
-btnSetEvent.MouseButton1Click:Connect(function()
-    save_event_pos()
-    local h = Instance.new("Hint")
-    h.Text = "saved event pos"
-    h.Parent = workspace
-    task.delay(2, function() if h then h:Destroy() end end)
-end)
-
-local btnTpEvent = Instance.new("TextButton")
-btnTpEvent.Size = UDim2.new(1, 0, 0, 48)
-btnTpEvent.BackgroundColor3 = Color3.fromRGB(45, 100, 160)
-btnTpEvent.Text = "➡  GO TO EVENT POS"
-btnTpEvent.TextColor3 = Color3.fromRGB(255, 255, 255)
-btnTpEvent.Font = Enum.Font.GothamBold
-btnTpEvent.TextSize = 14
-btnTpEvent.LayoutOrder = 4
-btnTpEvent.Parent = tabEvent
-mkCorner(btnTpEvent)
-
-btnTpEvent.MouseButton1Click:Connect(function()
-    if eventPos then teleport_to(eventPos)
-    else
-        local h = Instance.new("Hint")
-        h.Text = "chưa save event pos"
-        h.Parent = workspace
-        task.delay(2, function() if h then h:Destroy() end end)
-    end
-end)
-
-local evInfo = Instance.new("TextLabel")
-evInfo.Size = UDim2.new(1, 0, 0, 100)
-evInfo.BackgroundColor3 = Color3.fromRGB(28, 28, 36)
-evInfo.Text = "  event sẽ được phát hiện qua UI (festival,\ntournament, megalodon...). khi phát hiện và\nauto event bật, script tự bay tới event pos\nrồi câu bình thường."
-evInfo.TextColor3 = Color3.fromRGB(150, 150, 170)
-evInfo.Font = Enum.Font.Gotham
-evInfo.TextSize = 12
-evInfo.TextXAlignment = Enum.TextXAlignment.Left
-evInfo.TextYAlignment = Enum.TextYAlignment.Top
-evInfo.LayoutOrder = 5
-evInfo.Parent = tabEvent
-mkCorner(evInfo)
-local evPad = Instance.new("UIPadding")
-evPad.PaddingLeft = UDim.new(0, 10); evPad.PaddingTop = UDim.new(0, 10)
-evPad.Parent = evInfo
-
--- ===== minimize =====
-local minimized = false
-btnMin.MouseButton1Click:Connect(function()
-    minimized = not minimized
-    body.Visible = not minimized
-    tabBar.Visible = not minimized
-    btnMin.Text = minimized and "+" or "—"
-    if minimized then
-        mainFrame.Size = UDim2.new(0, 340, 0, 40)
-    else
-        mainFrame.Size = UDim2.new(0, 340, 0.85, 0)
-    end
-end)
-
--- status updater
-task.spawn(function()
-    while true do
-        local rod = get_equipped_rod()
-        local rodStr = rod and ("✅ " .. rod.Name) or "❌ not equipped"
-        local adminStr = adminFound and ("⚠ " .. adminName) or "✅ none"
-        local modeStr = running and "🟢 running" or "⏸ idle"
-
-        statusText.Text = string.format(
-            "ROD: %s\nADMIN: %s\nMODE: %s\nCAST: %.0f%%",
-            rodStr, adminStr, modeStr, castFill * 100
-        )
-
-        vCaught.Text = tostring(stats.caught)
-        vSold.Text = tostring(stats.sold)
-
-        if running and not adminFound then
-            if btnStart.Text ~= "■   STOP" then
-                btnStart.Text = "■   STOP"
-                btnStart.BackgroundColor3 = Color3.fromRGB(180, 35, 35)
-            end
-        else
-            if btnStart.Text ~= "▶   START AUTO" then
-                btnStart.Text = "▶   START AUTO"
-                btnStart.BackgroundColor3 = Color3.fromRGB(35, 155, 85)
-            end
-        end
-
-        local evPosStr = eventPos and ("✅ saved") or "❌ none"
-        local evDetectStr = lastEventDetect and "🟢 detected" or "⚪ none"
-        evStatus.Text = string.format(
-            "EVENT POS: %s\nEVENT DETECT: %s\nAUTO: %s\nTP COOLDOWN: %ds",
-            evPosStr, evDetectStr,
-            autoEvent and "ON" or "OFF",
-            CONFIG.event_tp_cooldown
-        )
-
-        task.wait(0.3)
-    end
-end)
+uiInfo("=== script loaded ===")
+uiInfo("1. cầm cần lên trước")
+uiInfo("2. bấm TEST CAST")
+uiInfo("3. xem console/output executor")
+uiInfo("4. gửi tao toàn bộ [DBG] + [EVT] log")
 
 selectTab(1)
 log("auto-fisch v5 started")
