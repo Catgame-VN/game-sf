@@ -1,4 +1,4 @@
--- auto_fisch_v3.lua — catlazy
+-- auto_fisch_v5.lua — catlazy
 -- mobile Delta executor
 -- Fisch 16732694052
 
@@ -7,13 +7,15 @@ if not game:IsLoaded() then game.Loaded:Wait() end
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
 local VU = game:GetService("VirtualUser")
-local UIS = game:GetService("UserInputService")
+local HttpS = game:GetService("HttpService")
 local LP = Players.LocalPlayer
 local PG = LP:WaitForChild("PlayerGui")
 local CAM = workspace.CurrentCamera
 
 local CONFIG = {
-    cast_hold = 1.2,
+    cast_hold = 1.4,
+    perfect_cast = true,
+    perfect_threshold = 0.88,
     shake_count = 6,
     shake_delay = 0.15,
     bite_timeout = 30.0,
@@ -24,41 +26,87 @@ local CONFIG = {
     sell_every = 20,
     debug_dump = false,
     keep_rarity = {
-        ["rare"] = true,
-        ["legendary"] = true,
-        ["mythic"] = true,
-        ["exotic"] = true,
-        ["limited"] = true,
-        ["event"] = true,
+        ["rare"] = true, ["legendary"] = true, ["mythic"] = true,
+        ["exotic"] = true, ["limited"] = true, ["event"] = true,
     },
     admin_detect = true,
     admin_scan_interval = 2.0,
-    admin_keywords = {
-        "admin", "mod", "moderator", "owner", "staff",
-        "helper", "support", "manager",
-    },
-    admin_age_threshold = 4000,
+    admin_keywords = {"admin", "mod", "moderator", "owner", "staff"},
+    admin_age_threshold = 4500,
     teleport_y_offset = 5,
+    event_scan_interval = 3.0,
+    event_tp_cooldown = 25.0,
+    event_keywords = {"event", "festival", "tournament", "megalodon", "shark hunt", "whale"},
 }
 
--- island coords: điền vào đây. ví dụ:
--- ["Moosewood"] = Vector3.new(123, 5, 456),
--- để trống nếu chưa có. dùng nút SAVE POS để lấy tọa độ.
-local ISLANDS = {
-    -- ["Moosewood"] = Vector3.new(0, 5, 0),
-    -- ["Roslit Bay"] = Vector3.new(0, 5, 0),
-    -- ["Sunstone"] = Vector3.new(0, 5, 0),
-    -- ["Snowcap"] = Vector3.new(0, 5, 0),
-    -- ["Ancient Isles"] = Vector3.new(0, 5, 0),
-    -- ["Atlantis"] = Vector3.new(0, 5, 0),
+local DEFAULT_ISLANDS = {
+    "Moosewood", "Roslit Bay", "Sunstone Island", "Snowcap Island",
+    "Ancient Isles", "Forsaken Shores", "Mushgrove Swamp",
+    "Terrapin Island", "The Depths", "Atlantis", "Brine Pool",
+    "Vertigo", "Roslit Volcano", "Ancient Archives",
 }
+
+local ISLANDS = {}
+for _, n in ipairs(DEFAULT_ISLANDS) do ISLANDS[n] = nil end
+
+local EVENT_FILE = "fisch_event.json"
+local ISLAND_FILE = "fisch_islands.json"
 
 local function log(m) print("[fisch] " .. m) end
+
+-- persistence
+local function load_data()
+    if not readfile or not isfile then return end
+    pcall(function()
+        if isfile(ISLAND_FILE) then
+            local d = HttpS:JSONDecode(readfile(ISLAND_FILE))
+            for name, c in pairs(d) do
+                if type(c) == "table" and c[1] then
+                    ISLANDS[name] = Vector3.new(c[1], c[2], c[3])
+                end
+            end
+        end
+    end)
+end
+local function save_islands()
+    if not writefile then return end
+    pcall(function()
+        local out = {}
+        for name, v in pairs(ISLANDS) do
+            if v then out[name] = {v.X, v.Y, v.Z} end
+        end
+        writefile(ISLAND_FILE, HttpS:JSONEncode(out))
+    end)
+end
+
+local eventPos = nil
+local function load_event()
+    if not readfile or not isfile then return end
+    pcall(function()
+        if isfile(EVENT_FILE) then
+            local d = HttpS:JSONDecode(readfile(EVENT_FILE))
+            if d and d[1] then
+                eventPos = Vector3.new(d[1], d[2], d[3])
+            end
+        end
+    end)
+end
+local function save_event()
+    if not writefile then return end
+    pcall(function()
+        if eventPos then
+            writefile(EVENT_FILE, HttpS:JSONEncode({eventPos.X, eventPos.Y, eventPos.Z}))
+        end
+    end)
+end
+
+load_data()
+load_event()
 
 if CONFIG.debug_dump then
     for _, o in ipairs(RS:GetDescendants()) do
         if o:IsA("RemoteEvent") or o:IsA("RemoteFunction") then
-            print("[dump] " .. o:GetFullName() .. " [" .. o.ClassName .. "]")
+            print("[dump] " .. o:GetFullName())
         end
     end
 end
@@ -84,82 +132,108 @@ log("sell=" .. tostring(sellRemote and sellRemote.Name or "nil"))
 log("reel=" .. tostring(reelRemote and reelRemote.Name or "nil"))
 
 local stats = { caught = 0, sold = 0, kept = 0, started = os.time() }
-local running = true
+local running = false
 local lastBite = 0
 local caught_since = 0
 local adminFound = false
 local adminName = ""
+local castFill = 0
+local autoEvent = false
+local lastEventTP = 0
+local lastEventDetect = false
 
--- ===== MOBILE INPUT =====
+-- input
 local function tap()
-    if mouse1click then
-        pcall(mouse1click)
-    else
-        pcall(function()
-            VU:CaptureController()
-            VU:ClickButton1(Vector2.new())
-        end)
-    end
+    if mouse1click then pcall(mouse1click) else pcall(function()
+        VU:CaptureController(); VU:ClickButton1(Vector2.new())
+    end) end
 end
-
 local function hold_start()
-    if mouse1down then
-        pcall(mouse1down)
-    else
-        pcall(function()
-            VU:CaptureController()
-            VU:ClickButton1(Vector2.new())
-        end)
-    end
+    if mouse1down then pcall(mouse1down) else pcall(function()
+        VU:CaptureController(); VU:ClickButton1(Vector2.new())
+    end) end
 end
-
 local function hold_stop()
-    if mouse1up then
-        pcall(mouse1up)
-    end
+    if mouse1up then pcall(mouse1up) end
 end
-
 local function key_space()
-    if keypress then
-        pcall(keypress, 0x20)
-    else
-        pcall(function()
-            VU:CaptureController()
-            VU:ClickButton1(Vector2.new())
-        end)
-    end
+    if keypress then pcall(keypress, 0x20) else pcall(function()
+        VU:CaptureController(); VU:ClickButton1(Vector2.new())
+    end) end
 end
 
--- ===== CAST =====
-local function do_cast()
-    if CONFIG.admin_detect and adminFound then return false end
-    local char = LP.Character
-    if not char then return false end
+-- rod
+local function get_equipped_rod()
+    local c = LP.Character
+    if not c then return nil end
+    for _, t in ipairs(c:GetChildren()) do
+        if t:IsA("Tool") and t.Name:lower():find("rod") then return t end
+    end
+    return nil
+end
+local function equip_any_rod()
+    local c = LP.Character
+    if not c then return nil end
+    local bp = LP:FindFirstChild("Backpack")
+    if not bp then return nil end
+    for _, t in ipairs(bp:GetChildren()) do
+        if t:IsA("Tool") and t.Name:lower():find("rod") then
+            t.Parent = c
+            task.wait(0.35)
+            return t
+        end
+    end
+    return nil
+end
 
-    local tool = char:FindFirstChildOfClass("Tool")
-    if not tool then
-        local bp = LP:FindFirstChild("Backpack")
-        if bp then
-            for _, t in ipairs(bp:GetChildren()) do
-                if t:IsA("Tool") and t.Name:lower():find("rod") then
-                    t.Parent = char
-                    task.wait(0.3)
-                    tool = t
-                    break
-                end
+-- cast meter
+local function find_cast_meter()
+    for _, g in ipairs(PG:GetDescendants()) do
+        if g:IsA("Frame") and g.Visible and g.Size.X.Scale > 0.01 and g.Size.X.Scale < 1.01 then
+            local n = g.Name:lower()
+            if (n:find("power") or n:find("cast") or n:find("charge")
+                or n:find("fill") or n:find("meter"))
+                and not n:find("background") and not n:find("frame") then
+                return g
             end
         end
     end
-    if not tool then
-        log("no rod equipped")
-        return false
+    return nil
+end
+
+local function do_cast()
+    if not running then return false end
+    if CONFIG.admin_detect and adminFound then return false end
+
+    local rod = get_equipped_rod()
+    if not rod then
+        rod = equip_any_rod()
+        if not rod then return false end
     end
 
     hold_start()
-    task.wait(CONFIG.cast_hold)
-    hold_stop()
-    task.wait(0.3)
+    local meter, t0 = nil, tick()
+    while tick() - t0 < 0.2 do
+        task.wait(0.03)
+        meter = find_cast_meter()
+        if meter then break end
+    end
 
+    if meter and CONFIG.perfect_cast then
+        local t1 = tick()
+        while tick() - t1 < 3 do
+            task.wait(0.02)
+            if not meter or not meter.Parent then break end
+            castFill = meter.Size.X.Scale
+            if castFill >= CONFIG.perfect_threshold then break end
+        end
+    else
+        task.wait(CONFIG.cast_hold)
+        castFill = 1.0
+    end
+
+    hold_stop()
+    task.wait(0.15)
     for _ = 1, CONFIG.shake_count do
         key_space()
         task.wait(CONFIG.shake_delay)
@@ -167,30 +241,25 @@ local function do_cast()
     return true
 end
 
--- ===== AUTO REEL =====
+-- reel
 local function reel_now()
+    if not running then return end
     if CONFIG.admin_detect and adminFound then return end
     if not CONFIG.auto_reel then return end
-
     if reelRemote then
         pcall(function()
-            if reelRemote:IsA("RemoteEvent") then
-                reelRemote:FireServer()
-            else
-                reelRemote:InvokeServer(true)
-            end
+            if reelRemote:IsA("RemoteEvent") then reelRemote:FireServer()
+            else reelRemote:InvokeServer(true) end
         end)
         task.wait(0.15)
         return
     end
-
     for _ = 1, CONFIG.reel_spam_count do
         tap()
         task.wait(CONFIG.reel_spam_delay)
     end
 end
 
--- ===== BITE HOOKS =====
 if reelRemote and reelRemote:IsA("RemoteEvent") then
     reelRemote.OnClientEvent:Connect(function()
         lastBite = tick()
@@ -199,7 +268,7 @@ if reelRemote and reelRemote:IsA("RemoteEvent") then
 end
 
 task.spawn(function()
-    while running do
+    while true do
         if PG then
             for _, g in ipairs(PG:GetDescendants()) do
                 if g:IsA("TextLabel") and g.Visible then
@@ -217,70 +286,61 @@ task.spawn(function()
     end
 end)
 
--- ===== ADMIN DETECT =====
+-- admin
 local function is_admin_player(plr)
     if plr == LP then return false end
-
     local name = plr.Name:lower()
-    local display = (plr.DisplayName or ""):lower()
-
+    local disp = (plr.DisplayName or ""):lower()
     for _, kw in ipairs(CONFIG.admin_keywords) do
-        if name:find(kw, 1, true) or display:find(kw, 1, true) then
+        if name:find(kw, 1, true) or disp:find(kw, 1, true) then
             return true, "name:" .. kw
         end
     end
-
     local char = plr.Character
     if char then
-        local head = char:FindFirstChild("Head")
-        if head then
-            for _, tag in ipairs(head:GetChildren()) do
-                if tag:IsA("BillboardGui") or tag:IsA("TextLabel") then
-                    local txt = (tag.Text or ""):lower()
-                    for _, kw in ipairs(CONFIG.admin_keywords) do
-                        if txt:find(kw, 1, true) then
-                            return true, "tag:" .. kw
-                        end
-                    end
-                end
-            end
-        end
         for _, tool in ipairs(char:GetChildren()) do
             if tool:IsA("Tool") then
                 local tn = tool.Name:lower()
-                for _, kw in ipairs({"admin", "ban", "kick", "command", "console"}) do
-                    if tn:find(kw, 1, true) then
-                        return true, "tool:" .. kw
-                    end
+                for _, kw in ipairs({"admin", "ban", "kick", "command"}) do
+                    if tn:find(kw, 1, true) then return true, "tool:" .. kw end
                 end
             end
         end
     end
-
     local ok, age = pcall(function() return plr.AccountAge end)
     if ok and type(age) == "number" and age > CONFIG.admin_age_threshold then
         return true, "age:" .. age
     end
-
     return false, ""
 end
 
-local function scan_admins()
-    for _, plr in ipairs(Players:GetPlayers()) do
-        local isAdm, reason = is_admin_player(plr)
-        if isAdm then
-            adminFound = true
-            adminName = plr.Name .. " (" .. reason .. ")"
-            return true
+task.spawn(function()
+    if not CONFIG.admin_detect then return end
+    while true do
+        for _, plr in ipairs(Players:GetPlayers()) do
+            local isAdm, reason = is_admin_player(plr)
+            if isAdm then
+                adminFound = true
+                adminName = plr.Name .. " (" .. reason .. ")"
+                running = false
+                autoEvent = false
+                log("=== ADMIN: " .. adminName .. " ===")
+                pcall(function()
+                    local hint = Instance.new("Hint")
+                    hint.Text = "ADMIN DETECTED: " .. adminName .. " - stopped"
+                    hint.Parent = workspace
+                    task.delay(10, function() if hint then hint:Destroy() end end)
+                end)
+                break
+            end
         end
+        task.wait(CONFIG.admin_scan_interval)
     end
-    return false
-end
+end)
 
--- ===== RARITY DETECT =====
+-- rarity/sell
 local function get_fish_list()
     local list = {}
-    if not PG then return list end
     for _, g in ipairs(PG:GetDescendants()) do
         if g:IsA("TextLabel") and g.Visible then
             local t = g.Text:lower()
@@ -292,56 +352,32 @@ local function get_fish_list()
             elseif t:find("event") then rar = "event"
             elseif t:find("rare") then rar = "rare"
             elseif t:find("uncommon") then rar = "uncommon"
-            elseif t:find("common") then rar = "common"
-            end
+            elseif t:find("common") then rar = "common" end
             if rar then
-                table.insert(list, {
-                    label = g,
-                    rarity = rar,
-                    parent = g.Parent,
-                })
+                table.insert(list, {label = g, rarity = rar, parent = g.Parent})
             end
         end
     end
     return list
 end
 
--- ===== SELL =====
 local function do_sell(mode)
-    if CONFIG.admin_detect and adminFound then return end
-    if not sellRemote then
-        log("sell remote nil")
-        return
-    end
-
+    if not sellRemote then log("sell nil"); return end
     if mode == "all" then
         pcall(function()
-            if sellRemote:IsA("RemoteEvent") then
-                sellRemote:FireServer("all")
-            else
-                sellRemote:InvokeServer("all")
-            end
+            if sellRemote:IsA("RemoteEvent") then sellRemote:FireServer("all")
+            else sellRemote:InvokeServer("all") end
         end)
         stats.sold = stats.sold + caught_since
         caught_since = 0
         log("sold ALL")
         return
     end
-
     local fish = get_fish_list()
     local to_sell = {}
-    local to_keep = {}
     for _, f in ipairs(fish) do
-        if CONFIG.keep_rarity[f.rarity] then
-            table.insert(to_keep, f)
-        else
-            table.insert(to_sell, f)
-        end
+        if not CONFIG.keep_rarity[f.rarity] then table.insert(to_sell, f) end
     end
-
-    log(("filtered: sell %d keep %d"):format(#to_sell, #to_keep))
-    stats.kept = stats.kept + #to_keep
-
     for _, f in ipairs(to_sell) do
         pcall(function()
             if sellRemote:IsA("RemoteEvent") then
@@ -354,374 +390,685 @@ local function do_sell(mode)
         task.wait(0.1)
     end
     caught_since = 0
-    log("sold filtered (" .. stats.sold .. ")")
+    log("sold filtered")
 end
 
--- ===== TELEPORT =====
+-- teleport
 local function teleport_to(vec)
     if not vec then return end
     local char = LP.Character
     if not char then return end
     local hrp = char:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
-
     hrp.CFrame = CFrame.new(vec + Vector3.new(0, CONFIG.teleport_y_offset, 0))
-    task.wait(0.5)
+    task.wait(0.4)
     hrp.CFrame = CFrame.new(vec + Vector3.new(0, CONFIG.teleport_y_offset, 0))
-    log("teleported -> " .. tostring(vec))
+    log("tp -> " .. tostring(vec))
 end
 
-local function save_current_pos(name)
+local function save_pos(name)
     local char = LP.Character
     if not char then return end
     local hrp = char:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
     ISLANDS[name] = hrp.Position
-    log(("saved %s = %s"):format(name, tostring(hrp.Position)))
+    save_islands()
+    log(("saved %s"):format(name))
 end
 
--- ===== ADMIN SHUTDOWN =====
-local function trigger_shutdown()
-    running = false
-    pcall(function()
-        for _, gui in ipairs(PG:GetChildren()) do
-            if gui.Name == "FischAutoV3" then
-                gui.Enabled = false
+local function save_event_pos()
+    local char = LP.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    eventPos = hrp.Position
+    save_event()
+    log(("saved event = %s"):format(tostring(eventPos)))
+end
+
+-- event detect
+local function detect_event()
+    for _, g in ipairs(PG:GetDescendants()) do
+        if g:IsA("TextLabel") and g.Visible then
+            local t = g.Text:lower()
+            for _, kw in ipairs(CONFIG.event_keywords) do
+                if t:find(kw, 1, true) then return true end
             end
         end
-    end)
-    pcall(function()
-        local hint = Instance.new("Hint")
-        hint.Text = "⚠ ADMIN DETECTED: " .. adminName .. " — hack stopped ⚠"
-        hint.Parent = workspace
-        task.delay(10, function()
-            if hint then hint:Destroy() end
-        end)
-    end)
-    log("=== ADMIN DETECTED: " .. adminName .. " ===")
+    end
+    return false
 end
 
 task.spawn(function()
-    if not CONFIG.admin_detect then return end
-    while running do
-        if scan_admins() then
-            trigger_shutdown()
-            break
+    while true do
+        if autoEvent and running and eventPos and not adminFound then
+            lastEventDetect = detect_event()
+            if lastEventDetect and tick() - lastEventTP > CONFIG.event_tp_cooldown then
+                teleport_to(eventPos)
+                lastEventTP = tick()
+                log("event tp")
+            end
         end
-        task.wait(CONFIG.admin_scan_interval)
+        task.wait(CONFIG.event_scan_interval)
     end
 end)
 
--- ===== MAIN LOOP =====
+-- main loop
 local function main()
-    while running do
-        if CONFIG.admin_detect and adminFound then break end
+    while true do
+        if not running then task.wait(0.5) continue end
+        if CONFIG.admin_detect and adminFound then running = false continue end
+
+        local rod = get_equipped_rod()
+        if not rod then
+            rod = equip_any_rod()
+            if not rod then task.wait(1.0) continue end
+        end
+
         do_cast()
 
         local t0 = tick()
         while tick() - t0 < CONFIG.bite_timeout do
+            if not running then break end
             if tick() - lastBite < 0.5 then break end
-            if adminFound then return end
             task.wait(0.1)
         end
 
-        if tick() - lastBite < 1.5 then
+        if running and tick() - lastBite < 1.5 then
             stats.caught = stats.caught + 1
             caught_since = caught_since + 1
-            log(("caught #%d"):format(stats.caught))
             if CONFIG.auto_sell and caught_since >= CONFIG.sell_every then
                 task.spawn(do_sell, "filtered")
             end
-        else
-            log("no bite, recast")
         end
 
-        task.wait(0.6 + math.random() * 0.4)
+        task.wait(0.5 + math.random() * 0.4)
     end
 end
 
--- ===== UI (auto-scale cho mobile) =====
+-- ===== UI =====
 local sg = Instance.new("ScreenGui")
-sg.Name = "FischAutoV3"
+sg.Name = "FischAutoV5"
 sg.ResetOnSpawn = false
 sg.IgnoreGuiInset = true
+sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 sg.Parent = PG
 
--- auto-scale wrapper
 local scale = Instance.new("UIScale")
 scale.Parent = sg
-
 local function update_scale()
-    local vp = CAM and CAM.ViewportSize or Vector2.new(800, 600)
-    -- thiết kế gốc cho 400x800 px (mobile portrait)
-    -- scale = min(vp/400, vp/800) để fit cả hai chiều
-    local s = math.min(vp.X / 400, vp.Y / 800)
-    s = math.clamp(s, 0.6, 1.4)
+    local vp = CAM.ViewportSize
+    local s = math.min(vp.X / 340, vp.Y / 720)
+    s = math.clamp(s, 0.7, 1.5)
     scale.Scale = s
 end
 update_scale()
-if CAM then
-    CAM:GetPropertyChangedSignal("ViewportSize"):Connect(update_scale)
-end
+CAM:GetPropertyChangedSignal("ViewportSize"):Connect(update_scale)
 
--- main frame (gốc 380x560)
-local f = Instance.new("Frame")
-f.Size = UDim2.fromOffset(380, 560)
-f.Position = UDim2.new(0, 8, 0, 8)
-f.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
-f.BorderSizePixel = 0
-f.ClipsDescendants = true
-f.Parent = sg
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "Main"
+mainFrame.Size = UDim2.new(0, 340, 0.85, 0)
+mainFrame.Position = UDim2.new(0, 8, 0, 8)
+mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 26)
+mainFrame.BorderSizePixel = 0
+mainFrame.ClipsDescendants = true
+mainFrame.Parent = sg
 
--- title
+local c1 = Instance.new("UICorner"); c1.CornerRadius = UDim.new(0, 10); c1.Parent = mainFrame
+
+local header = Instance.new("Frame")
+header.Size = UDim2.new(1, 0, 0, 40)
+header.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+header.Parent = mainFrame
+local hc = Instance.new("UICorner"); hc.CornerRadius = UDim.new(0, 10); hc.Parent = header
+local hm = Instance.new("Frame")
+hm.Size = UDim2.new(1, 0, 0.5, 0); hm.Position = UDim2.new(0, 0, 0.5, 0)
+hm.BackgroundColor3 = Color3.fromRGB(35, 35, 45); hm.BorderSizePixel = 0
+hm.Parent = header
+
 local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, 0, 0, 32)
-title.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
-title.Text = "  auto fisch v3 — catlazy"
+title.Size = UDim2.new(1, -80, 1, 0)
+title.Position = UDim2.new(0, 14, 0, 0)
+title.BackgroundTransparency = 1
+title.Text = "Auto Fisch v5"
 title.TextColor3 = Color3.fromRGB(255, 255, 255)
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Font = Enum.Font.Code
-title.TextSize = 16
-title.Parent = f
+title.Font = Enum.Font.GothamBold
+title.TextSize = 18
+title.Parent = header
 
--- minimize button
 local btnMin = Instance.new("TextButton")
-btnMin.Size = UDim2.fromOffset(30, 26)
-btnMin.Position = UDim2.new(1, -35, 0, 3)
-btnMin.Text = "−"
-btnMin.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+btnMin.Size = UDim2.new(0, 32, 0, 28)
+btnMin.Position = UDim2.new(1, -40, 0, 6)
+btnMin.BackgroundColor3 = Color3.fromRGB(55, 55, 70)
+btnMin.Text = "—"
 btnMin.TextColor3 = Color3.fromRGB(255, 255, 255)
-btnMin.Font = Enum.Font.Code
-btnMin.TextSize = 18
-btnMin.Parent = f
+btnMin.Font = Enum.Font.GothamBold
+btnMin.TextSize = 20
+btnMin.Parent = header
+local bmc = Instance.new("UICorner"); bmc.CornerRadius = UDim.new(0, 6); bmc.Parent = btnMin
 
--- body (chứa mọi thứ, ẩn khi minimize)
-local body = Instance.new("Frame")
-body.Size = UDim2.new(1, 0, 1, -32)
-body.Position = UDim2.fromOffset(0, 32)
-body.BackgroundTransparency = 1
-body.Parent = f
+-- tab bar
+local tabBar = Instance.new("Frame")
+tabBar.Size = UDim2.new(1, 0, 0, 36)
+tabBar.Position = UDim2.new(0, 0, 0, 40)
+tabBar.BackgroundColor3 = Color3.fromRGB(28, 28, 36)
+tabBar.Parent = mainFrame
 
-local minimized = false
-btnMin.MouseButton1Click:Connect(function()
-    minimized = not minimized
-    body.Visible = not minimized
-    if minimized then
-        f.Size = UDim2.fromOffset(380, 32)
-        btnMin.Text = "+"
-    else
-        f.Size = UDim2.fromOffset(380, 560)
-        btnMin.Text = "−"
-    end
-end)
+local tabList = Instance.new("UIListLayout")
+tabList.FillDirection = Enum.FillDirection.Horizontal
+tabList.SortOrder = Enum.SortOrder.LayoutOrder
+tabList.Parent = tabBar
 
--- status label
-local status = Instance.new("TextLabel")
-status.Size = UDim2.new(1, -12, 0, 110)
-status.Position = UDim2.fromOffset(6, 4)
-status.BackgroundTransparency = 1
-status.Text = "starting..."
-status.TextColor3 = Color3.fromRGB(0, 255, 150)
-status.Font = Enum.Font.Code
-status.TextSize = 13
-status.TextXAlignment = Enum.TextXAlignment.Left
-status.TextYAlignment = Enum.TextYAlignment.Top
-status.Parent = body
+local tabNames = {"AUTO", "TELEPORT", "EVENT"}
+local tabButtons = {}
+local tabContents = {}
 
--- ===== TELEPORT SECTION =====
-local telTitle = Instance.new("TextLabel")
-telTitle.Size = UDim2.new(1, -12, 0, 22)
-telTitle.Position = UDim2.fromOffset(6, 118)
-telTitle.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
-telTitle.Text = "  TELEPORT"
-telTitle.TextColor3 = Color3.fromRGB(200, 200, 200)
-telTitle.TextXAlignment = Enum.TextXAlignment.Left
-telTitle.Font = Enum.Font.Code
-telTitle.TextSize = 13
-telTitle.Parent = body
-
-local telScroll = Instance.new("ScrollingFrame")
-telScroll.Size = UDim2.new(1, -12, 0, 180)
-telScroll.Position = UDim2.fromOffset(6, 142)
-telScroll.BackgroundColor3 = Color3.fromRGB(20, 20, 26)
-telScroll.BorderSizePixel = 1
-telScroll.BorderColor3 = Color3.fromRGB(50, 50, 60)
-telScroll.ScrollBarThickness = 6
-telScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-telScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-telScroll.Parent = body
-
-local telLayout = Instance.new("UIListLayout")
-telLayout.Padding = UDim.new(0, 3)
-telLayout.SortOrder = Enum.SortOrder.Name
-telLayout.Parent = telScroll
-
-local telPad = Instance.new("UIPadding")
-telPad.PaddingLeft = UDim.new(0, 4)
-telPad.PaddingTop = UDim.new(0, 4)
-telPad.PaddingRight = UDim.new(0, 4)
-telPad.Parent = telScroll
-
-local function rebuild_teleport_list()
-    for _, ch in ipairs(telScroll:GetChildren()) do
-        if ch:IsA("TextButton") or ch:IsA("Frame") then
-            ch:Destroy()
+local function selectTab(idx)
+    for i, btn in ipairs(tabButtons) do
+        if i == idx then
+            btn.BackgroundColor3 = Color3.fromRGB(45, 65, 100)
+            btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        else
+            btn.BackgroundColor3 = Color3.fromRGB(28, 28, 36)
+            btn.TextColor3 = Color3.fromRGB(150, 150, 170)
         end
     end
-
-    local names = {}
-    for name, _ in pairs(ISLANDS) do
-        table.insert(names, name)
-    end
-    table.sort(names)
-
-    if #names == 0 then
-        local empty = Instance.new("TextLabel")
-        empty.Size = UDim2.new(1, 0, 0, 40)
-        empty.BackgroundTransparency = 1
-        empty.Text = "chưa có đảo.\nđứng ở đảo, gõ tên, bấm SAVE POS"
-        empty.TextColor3 = Color3.fromRGB(150, 150, 150)
-        empty.Font = Enum.Font.Code
-        empty.TextSize = 11
-        empty.TextXAlignment = Enum.TextXAlignment.Left
-        empty.Parent = telScroll
-        return
-    end
-
-    for _, name in ipairs(names) do
-        local btn = Instance.new("TextButton")
-        btn.Size = UDim2.new(1, 0, 0, 28)
-        btn.BackgroundColor3 = Color3.fromRGB(40, 60, 100)
-        btn.Text = "→ " .. name
-        btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-        btn.Font = Enum.Font.Code
-        btn.TextSize = 12
-        btn.TextXAlignment = Enum.TextXAlignment.Left
-        btn.Parent = telScroll
-        btn.MouseButton1Click:Connect(function()
-            teleport_to(ISLANDS[name])
-        end)
+    for i, f in ipairs(tabContents) do
+        f.Visible = (i == idx)
     end
 end
-rebuild_teleport_list()
 
--- input box + save button
-local nameBox = Instance.new("TextBox")
-nameBox.Size = UDim2.new(1, -100, 0, 28)
-nameBox.Position = UDim2.fromOffset(6, 326)
-nameBox.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-nameBox.PlaceholderText = "tên đảo (vd: Moosewood)"
-nameBox.Text = ""
-nameBox.Font = Enum.Font.Code
-nameBox.TextSize = 12
-nameBox.Parent = body
+for i, name in ipairs(tabNames) do
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1/3, 0, 1, 0)
+    btn.BackgroundColor3 = Color3.fromRGB(28, 28, 36)
+    btn.Text = name
+    btn.TextColor3 = Color3.fromRGB(150, 150, 170)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 12
+    btn.LayoutOrder = i
+    btn.Parent = tabBar
+    btn.MouseButton1Click:Connect(function() selectTab(i) end)
+    tabButtons[i] = btn
+end
 
-local btnSave = Instance.new("TextButton")
-btnSave.Size = UDim2.fromOffset(88, 28)
-btnSave.Position = UDim2.new(1, -94, 0, 326)
-btnSave.BackgroundColor3 = Color3.fromRGB(30, 120, 60)
-btnSave.Text = "SAVE POS"
-btnSave.TextColor3 = Color3.fromRGB(255, 255, 255)
-btnSave.Font = Enum.Font.Code
-btnSave.TextSize = 11
-btnSave.Parent = body
+-- body
+local body = Instance.new("Frame")
+body.Size = UDim2.new(1, 0, 1, -76)
+body.Position = UDim2.new(0, 0, 0, 76)
+body.BackgroundTransparency = 1
+body.Parent = mainFrame
 
-btnSave.MouseButton1Click:Connect(function()
-    local n = nameBox.Text
-    if n and #n > 0 then
-        save_current_pos(n)
-        nameBox.Text = ""
-        rebuild_teleport_list()
-        local hint = Instance.new("Hint")
-        hint.Text = "saved pos: " .. n
-        hint.Parent = workspace
-        task.delay(3, function() if hint then hint:Destroy() end end)
+local function makeTab(idx)
+    local f = Instance.new("ScrollingFrame")
+    f.Name = "Tab" .. idx
+    f.Size = UDim2.new(1, 0, 1, 0)
+    f.BackgroundTransparency = 1
+    f.BorderSizePixel = 0
+    f.ScrollBarThickness = 4
+    f.ScrollBarImageColor3 = Color3.fromRGB(100, 100, 130)
+    f.CanvasSize = UDim2.new(0, 0, 0, 0)
+    f.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    f.Visible = (idx == 1)
+    f.Parent = body
+
+    local l = Instance.new("UIListLayout")
+    l.Padding = UDim.new(0, 10)
+    l.SortOrder = Enum.SortOrder.LayoutOrder
+    l.Parent = f
+
+    local p = Instance.new("UIPadding")
+    p.PaddingLeft = UDim.new(0, 12); p.PaddingRight = UDim.new(0, 12)
+    p.PaddingTop = UDim.new(0, 12); p.PaddingBottom = UDim.new(0, 12)
+    p.Parent = f
+
+    tabContents[idx] = f
+    return f
+end
+
+local function mkCorner(o, r)
+    local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, r or 8); c.Parent = o
+end
+
+local function mkSection(parent, text, order)
+    local l = Instance.new("TextLabel")
+    l.Size = UDim2.new(1, 0, 0, 24)
+    l.BackgroundTransparency = 1
+    l.Text = "  " .. text
+    l.TextColor3 = Color3.fromRGB(150, 160, 200)
+    l.TextXAlignment = Enum.TextXAlignment.Left
+    l.Font = Enum.Font.GothamBold
+    l.TextSize = 14
+    l.LayoutOrder = order
+    l.Parent = parent
+end
+
+-- ===== TAB 1: AUTO =====
+local tabAuto = makeTab(1)
+
+local statusCard = Instance.new("Frame")
+statusCard.Size = UDim2.new(1, 0, 0, 92)
+statusCard.BackgroundColor3 = Color3.fromRGB(28, 28, 36)
+statusCard.BorderSizePixel = 0
+statusCard.LayoutOrder = 1
+statusCard.Parent = tabAuto
+mkCorner(statusCard)
+
+local statusText = Instance.new("TextLabel")
+statusText.Size = UDim2.new(1, -20, 1, -10)
+statusText.Position = UDim2.new(0, 10, 0, 5)
+statusText.BackgroundTransparency = 1
+statusText.Text = "loading..."
+statusText.TextColor3 = Color3.fromRGB(180, 220, 180)
+statusText.Font = Enum.Font.Code
+statusText.TextSize = 13
+statusText.TextXAlignment = Enum.TextXAlignment.Left
+statusText.TextYAlignment = Enum.TextYAlignment.Top
+statusText.Parent = statusCard
+
+local btnStart = Instance.new("TextButton")
+btnStart.Size = UDim2.new(1, 0, 0, 56)
+btnStart.BackgroundColor3 = Color3.fromRGB(35, 155, 85)
+btnStart.Text = "▶   START AUTO"
+btnStart.TextColor3 = Color3.fromRGB(255, 255, 255)
+btnStart.Font = Enum.Font.GothamBold
+btnStart.TextSize = 18
+btnStart.LayoutOrder = 2
+btnStart.Parent = tabAuto
+mkCorner(btnStart, 10)
+
+btnStart.MouseButton1Click:Connect(function()
+    if adminFound then return end
+    running = not running
+    if running then
+        btnStart.Text = "■   STOP"
+        btnStart.BackgroundColor3 = Color3.fromRGB(180, 35, 35)
+    else
+        btnStart.Text = "▶   START AUTO"
+        btnStart.BackgroundColor3 = Color3.fromRGB(35, 155, 85)
     end
 end)
 
--- ===== SELL SECTION =====
-local sellTitle = Instance.new("TextLabel")
-sellTitle.Size = UDim2.new(1, -12, 0, 22)
-sellTitle.Position = UDim2.fromOffset(6, 360)
-sellTitle.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
-sellTitle.Text = "  SELL"
-sellTitle.TextColor3 = Color3.fromRGB(200, 200, 200)
-sellTitle.TextXAlignment = Enum.TextXAlignment.Left
-sellTitle.Font = Enum.Font.Code
-sellTitle.TextSize = 13
-sellTitle.Parent = body
+local statsRow = Instance.new("Frame")
+statsRow.Size = UDim2.new(1, 0, 0, 60)
+statsRow.BackgroundTransparency = 1
+statsRow.LayoutOrder = 3
+statsRow.Parent = tabAuto
 
-local btnAll = Instance.new("TextButton")
-btnAll.Size = UDim2.new(1, -12, 0, 30)
-btnAll.Position = UDim2.fromOffset(6, 386)
-btnAll.Text = "SELL ALL"
-btnAll.BackgroundColor3 = Color3.fromRGB(180, 30, 30)
-btnAll.TextColor3 = Color3.fromRGB(255, 255, 255)
-btnAll.Font = Enum.Font.Code
-btnAll.TextSize = 13
-btnAll.Parent = body
+local sc = Instance.new("Frame")
+sc.Size = UDim2.new(0.48, 0, 1, 0)
+sc.BackgroundColor3 = Color3.fromRGB(28, 28, 36)
+sc.BorderSizePixel = 0
+sc.Parent = statsRow
+mkCorner(sc)
 
-local btnFilter = Instance.new("TextButton")
-btnFilter.Size = UDim2.new(1, -12, 0, 30)
-btnFilter.Position = UDim2.fromOffset(6, 420)
-btnFilter.Text = "SELL FILTERED (giu rare+)"
-btnFilter.BackgroundColor3 = Color3.fromRGB(30, 120, 180)
-btnFilter.TextColor3 = Color3.fromRGB(255, 255, 255)
-btnFilter.Font = Enum.Font.Code
-btnFilter.TextSize = 13
-btnFilter.Parent = body
+local lCaught = Instance.new("TextLabel")
+lCaught.Size = UDim2.new(1, -16, 0, 20); lCaught.Position = UDim2.new(0, 8, 0, 4)
+lCaught.BackgroundTransparency = 1; lCaught.Text = "CAUGHT"
+lCaught.TextColor3 = Color3.fromRGB(130, 130, 160)
+lCaught.Font = Enum.Font.GothamBold; lCaught.TextSize = 11
+lCaught.TextXAlignment = Enum.TextXAlignment.Left; lCaught.Parent = sc
+
+local vCaught = Instance.new("TextLabel")
+vCaught.Size = UDim2.new(1, -16, 0, 30); vCaught.Position = UDim2.new(0, 8, 0, 24)
+vCaught.BackgroundTransparency = 1; vCaught.Text = "0"
+vCaught.TextColor3 = Color3.fromRGB(120, 220, 160)
+vCaught.Font = Enum.Font.GothamBold; vCaught.TextSize = 24
+vCaught.TextXAlignment = Enum.TextXAlignment.Left; vCaught.Parent = sc
+
+local sd = Instance.new("Frame")
+sd.Size = UDim2.new(0.48, 0, 1, 0); sd.Position = UDim2.new(0.52, 0, 0, 0)
+sd.BackgroundColor3 = Color3.fromRGB(28, 28, 36); sd.BorderSizePixel = 0
+sd.Parent = statsRow
+mkCorner(sd)
+
+local lSold = Instance.new("TextLabel")
+lSold.Size = UDim2.new(1, -16, 0, 20); lSold.Position = UDim2.new(0, 8, 0, 4)
+lSold.BackgroundTransparency = 1; lSold.Text = "SOLD"
+lSold.TextColor3 = Color3.fromRGB(130, 130, 160)
+lSold.Font = Enum.Font.GothamBold; lSold.TextSize = 11
+lSold.TextXAlignment = Enum.TextXAlignment.Left; lSold.Parent = sd
+
+local vSold = Instance.new("TextLabel")
+vSold.Size = UDim2.new(1, -16, 0, 30); vSold.Position = UDim2.new(0, 8, 0, 24)
+vSold.BackgroundTransparency = 1; vSold.Text = "0"
+vSold.TextColor3 = Color3.fromRGB(120, 180, 220)
+vSold.Font = Enum.Font.GothamBold; vSold.TextSize = 24
+vSold.TextXAlignment = Enum.TextXAlignment.Left; vSold.Parent = sd
+
+mkSection(tabAuto, "💰  SELL", 4)
+
+local sellRow = Instance.new("Frame")
+sellRow.Size = UDim2.new(1, 0, 0, 44)
+sellRow.BackgroundTransparency = 1
+sellRow.LayoutOrder = 5
+sellRow.Parent = tabAuto
+
+local btnSellAll = Instance.new("TextButton")
+btnSellAll.Size = UDim2.new(0.48, 0, 1, 0)
+btnSellAll.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
+btnSellAll.Text = "SELL ALL"
+btnSellAll.TextColor3 = Color3.fromRGB(255, 255, 255)
+btnSellAll.Font = Enum.Font.GothamBold
+btnSellAll.TextSize = 14
+btnSellAll.Parent = sellRow
+mkCorner(btnSellAll)
+
+local btnSellFilter = Instance.new("TextButton")
+btnSellFilter.Size = UDim2.new(0.48, 0, 1, 0)
+btnSellFilter.Position = UDim2.new(0.52, 0, 0, 0)
+btnSellFilter.BackgroundColor3 = Color3.fromRGB(50, 110, 170)
+btnSellFilter.Text = "SELL FILTER"
+btnSellFilter.TextColor3 = Color3.fromRGB(255, 255, 255)
+btnSellFilter.Font = Enum.Font.GothamBold
+btnSellFilter.TextSize = 14
+btnSellFilter.Parent = sellRow
+mkCorner(btnSellFilter)
 
 local btnAuto = Instance.new("TextButton")
-btnAuto.Size = UDim2.new(1, -12, 0, 30)
-btnAuto.Position = UDim2.fromOffset(6, 454)
+btnAuto.Size = UDim2.new(1, 0, 0, 44)
+btnAuto.BackgroundColor3 = Color3.fromRGB(55, 55, 70)
 btnAuto.Text = "AUTO SELL: OFF"
-btnAuto.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
 btnAuto.TextColor3 = Color3.fromRGB(255, 255, 255)
-btnAuto.Font = Enum.Font.Code
-btnAuto.TextSize = 13
-btnAuto.Parent = body
+btnAuto.Font = Enum.Font.GothamBold
+btnAuto.TextSize = 14
+btnAuto.LayoutOrder = 6
+btnAuto.Parent = tabAuto
+mkCorner(btnAuto)
 
--- stop
-local stop = Instance.new("TextButton")
-stop.Size = UDim2.new(1, -12, 0, 32)
-stop.Position = UDim2.new(0, 6, 1, -40)
-stop.Text = "STOP"
-stop.BackgroundColor3 = Color3.fromRGB(100, 20, 20)
-stop.TextColor3 = Color3.fromRGB(255, 255, 255)
-stop.Font = Enum.Font.Code
-stop.TextSize = 13
-stop.Parent = body
-
--- actions
-btnAll.MouseButton1Click:Connect(function() task.spawn(do_sell, "all") end)
-btnFilter.MouseButton1Click:Connect(function() task.spawn(do_sell, "filtered") end)
+btnSellAll.MouseButton1Click:Connect(function() task.spawn(do_sell, "all") end)
+btnSellFilter.MouseButton1Click:Connect(function() task.spawn(do_sell, "filtered") end)
 btnAuto.MouseButton1Click:Connect(function()
     CONFIG.auto_sell = not CONFIG.auto_sell
     btnAuto.Text = "AUTO SELL: " .. (CONFIG.auto_sell and "ON" or "OFF")
     btnAuto.BackgroundColor3 = CONFIG.auto_sell
-        and Color3.fromRGB(30, 120, 60)
-        or Color3.fromRGB(60, 60, 70)
-end)
-stop.MouseButton1Click:Connect(function()
-    running = false
-    status.Text = "stopped"
-    stop.Text = "STOPPED"
+        and Color3.fromRGB(35, 155, 85) or Color3.fromRGB(55, 55, 70)
 end)
 
--- status update
-task.spawn(function()
-    while running do
-        status.Text = string.format(
-            "caught: %d\nsold: %d\nkept: %d\nuptime: %ds\ncast=%s sell=%s\nadmin=%s",
-            stats.caught, stats.sold, stats.kept,
-            os.time() - stats.started,
-            castRemote and "ok" or "nil",
-            sellRemote and "ok" or "nil",
-            adminFound and "DETECTED" or "none"
-        )
-        task.wait(0.5)
+-- ===== TAB 2: TELEPORT =====
+local tabTP = makeTab(2)
+
+local tpInputRow = Instance.new("Frame")
+tpInputRow.Size = UDim2.new(1, 0, 0, 44)
+tpInputRow.BackgroundTransparency = 1
+tpInputRow.LayoutOrder = 1
+tpInputRow.Parent = tabTP
+
+local nameBox = Instance.new("TextBox")
+nameBox.Size = UDim2.new(1, -100, 1, 0)
+nameBox.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+nameBox.PlaceholderText = "tên đảo mới..."
+nameBox.Text = ""
+nameBox.Font = Enum.Font.Gotham
+nameBox.TextSize = 14
+nameBox.Parent = tpInputRow
+mkCorner(nameBox, 6)
+
+local btnSave = Instance.new("TextButton")
+btnSave.Size = UDim2.new(0, 92, 1, 0)
+btnSave.Position = UDim2.new(1, -92, 0, 0)
+btnSave.BackgroundColor3 = Color3.fromRGB(50, 140, 90)
+btnSave.Text = "+ SAVE"
+btnSave.TextColor3 = Color3.fromRGB(255, 255, 255)
+btnSave.Font = Enum.Font.GothamBold
+btnSave.TextSize = 14
+btnSave.Parent = tpInputRow
+mkCorner(btnSave, 6)
+
+local tpScroll = Instance.new("Frame")
+tpScroll.Size = UDim2.new(1, 0, 0, 0)
+tpScroll.BackgroundTransparency = 1
+tpScroll.AutomaticSize = Enum.AutomaticSize.Y
+tpScroll.LayoutOrder = 2
+tpScroll.Parent = tabTP
+
+local tpList = Instance.new("UIListLayout")
+tpList.Padding = UDim.new(0, 6)
+tpList.SortOrder = Enum.SortOrder.LayoutOrder
+tpList.Parent = tpScroll
+
+local function rebuild_tp()
+    for _, ch in ipairs(tpScroll:GetChildren()) do
+        if ch:IsA("TextButton") or ch:IsA("Frame") then ch:Destroy() end
+    end
+
+    local names = {}
+    for n, _ in pairs(ISLANDS) do table.insert(names, n) end
+    table.sort(names)
+
+    for _, name in ipairs(names) do
+        local row = Instance.new("Frame")
+        row.Size = UDim2.new(1, 0, 0, 48)
+        row.BackgroundColor3 = Color3.fromRGB(28, 28, 36)
+        row.BorderSizePixel = 0
+        row.Parent = tpScroll
+        mkCorner(row)
+
+        local lbl = Instance.new("TextLabel")
+        lbl.Size = UDim2.new(1, -140, 1, 0)
+        lbl.Position = UDim2.new(0, 12, 0, 0)
+        lbl.BackgroundTransparency = 1
+        local hasPos = ISLANDS[name] ~= nil
+        lbl.Text = (hasPos and "✅ " or "⚠  ") .. name
+        lbl.TextColor3 = hasPos and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(200, 180, 120)
+        lbl.Font = Enum.Font.GothamBold
+        lbl.TextSize = 13
+        lbl.TextXAlignment = Enum.TextXAlignment.Left
+        lbl.Parent = row
+
+        local btnGO = Instance.new("TextButton")
+        btnGO.Size = UDim2.new(0, 58, 0, 36)
+        btnGO.Position = UDim2.new(1, -132, 0, 6)
+        btnGO.BackgroundColor3 = hasPos and Color3.fromRGB(45, 100, 160) or Color3.fromRGB(60, 60, 60)
+        btnGO.Text = "GO"
+        btnGO.TextColor3 = Color3.fromRGB(255, 255, 255)
+        btnGO.Font = Enum.Font.GothamBold
+        btnGO.TextSize = 13
+        btnGO.Parent = row
+        mkCorner(btnGO, 6)
+
+        local btnSET = Instance.new("TextButton")
+        btnSET.Size = UDim2.new(0, 58, 0, 36)
+        btnSET.Position = UDim2.new(1, -66, 0, 6)
+        btnSET.BackgroundColor3 = Color3.fromRGB(50, 140, 90)
+        btnSET.Text = "SET"
+        btnSET.TextColor3 = Color3.fromRGB(255, 255, 255)
+        btnSET.Font = Enum.Font.GothamBold
+        btnSET.TextSize = 13
+        btnSET.Parent = row
+        mkCorner(btnSET, 6)
+
+        btnGO.MouseButton1Click:Connect(function()
+            if ISLANDS[name] then
+                teleport_to(ISLANDS[name])
+            else
+                local h = Instance.new("Hint")
+                h.Text = name .. " chưa save pos. Đứng ở đó, bấm SET."
+                h.Parent = workspace
+                task.delay(3, function() if h then h:Destroy() end end)
+            end
+        end)
+
+        btnSET.MouseButton1Click:Connect(function()
+            save_pos(name)
+            rebuild_tp()
+        end)
+    end
+end
+rebuild_tp()
+
+btnSave.MouseButton1Click:Connect(function()
+    local n = nameBox.Text
+    if n and #n > 0 then
+        save_pos(n)
+        nameBox.Text = ""
+        rebuild_tp()
     end
 end)
 
-log("auto-fisch v3 started")
-main()
+-- ===== TAB 3: EVENT =====
+local tabEvent = makeTab(3)
+
+local evCard = Instance.new("Frame")
+evCard.Size = UDim2.new(1, 0, 0, 88)
+evCard.BackgroundColor3 = Color3.fromRGB(28, 28, 36)
+evCard.BorderSizePixel = 0
+evCard.LayoutOrder = 1
+evCard.Parent = tabEvent
+mkCorner(evCard)
+
+local evStatus = Instance.new("TextLabel")
+evStatus.Size = UDim2.new(1, -20, 1, -10)
+evStatus.Position = UDim2.new(0, 10, 0, 5)
+evStatus.BackgroundTransparency = 1
+evStatus.Text = "loading..."
+evStatus.TextColor3 = Color3.fromRGB(200, 180, 220)
+evStatus.Font = Enum.Font.Code
+evStatus.TextSize = 13
+evStatus.TextXAlignment = Enum.TextXAlignment.Left
+evStatus.TextYAlignment = Enum.TextYAlignment.Top
+evStatus.Parent = evCard
+
+local btnEventToggle = Instance.new("TextButton")
+btnEventToggle.Size = UDim2.new(1, 0, 0, 56)
+btnEventToggle.BackgroundColor3 = Color3.fromRGB(55, 55, 70)
+btnEventToggle.Text = "🎉  AUTO EVENT: OFF"
+btnEventToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+btnEventToggle.Font = Enum.Font.GothamBold
+btnEventToggle.TextSize = 16
+btnEventToggle.LayoutOrder = 2
+btnEventToggle.Parent = tabEvent
+mkCorner(btnEventToggle, 10)
+
+btnEventToggle.MouseButton1Click:Connect(function()
+    autoEvent = not autoEvent
+    if autoEvent then
+        btnEventToggle.Text = "🎉  AUTO EVENT: ON"
+        btnEventToggle.BackgroundColor3 = Color3.fromRGB(180, 120, 35)
+        if not eventPos then
+            local h = Instance.new("Hint")
+            h.Text = "chưa save event pos. Bấm SET EVENT POS trước."
+            h.Parent = workspace
+            task.delay(3, function() if h then h:Destroy() end end)
+        end
+    else
+        btnEventToggle.Text = "🎉  AUTO EVENT: OFF"
+        btnEventToggle.BackgroundColor3 = Color3.fromRGB(55, 55, 70)
+    end
+end)
+
+local btnSetEvent = Instance.new("TextButton")
+btnSetEvent.Size = UDim2.new(1, 0, 0, 48)
+btnSetEvent.BackgroundColor3 = Color3.fromRGB(50, 140, 90)
+btnSetEvent.Text = "📍 SET EVENT POS"
+btnSetEvent.TextColor3 = Color3.fromRGB(255, 255, 255)
+btnSetEvent.Font = Enum.Font.GothamBold
+btnSetEvent.TextSize = 14
+btnSetEvent.LayoutOrder = 3
+btnSetEvent.Parent = tabEvent
+mkCorner(btnSetEvent)
+
+btnSetEvent.MouseButton1Click:Connect(function()
+    save_event_pos()
+    local h = Instance.new("Hint")
+    h.Text = "saved event pos"
+    h.Parent = workspace
+    task.delay(2, function() if h then h:Destroy() end end)
+end)
+
+local btnTpEvent = Instance.new("TextButton")
+btnTpEvent.Size = UDim2.new(1, 0, 0, 48)
+btnTpEvent.BackgroundColor3 = Color3.fromRGB(45, 100, 160)
+btnTpEvent.Text = "➡  GO TO EVENT POS"
+btnTpEvent.TextColor3 = Color3.fromRGB(255, 255, 255)
+btnTpEvent.Font = Enum.Font.GothamBold
+btnTpEvent.TextSize = 14
+btnTpEvent.LayoutOrder = 4
+btnTpEvent.Parent = tabEvent
+mkCorner(btnTpEvent)
+
+btnTpEvent.MouseButton1Click:Connect(function()
+    if eventPos then teleport_to(eventPos)
+    else
+        local h = Instance.new("Hint")
+        h.Text = "chưa save event pos"
+        h.Parent = workspace
+        task.delay(2, function() if h then h:Destroy() end end)
+    end
+end)
+
+local evInfo = Instance.new("TextLabel")
+evInfo.Size = UDim2.new(1, 0, 0, 100)
+evInfo.BackgroundColor3 = Color3.fromRGB(28, 28, 36)
+evInfo.Text = "  event sẽ được phát hiện qua UI (festival,\ntournament, megalodon...). khi phát hiện và\nauto event bật, script tự bay tới event pos\nrồi câu bình thường."
+evInfo.TextColor3 = Color3.fromRGB(150, 150, 170)
+evInfo.Font = Enum.Font.Gotham
+evInfo.TextSize = 12
+evInfo.TextXAlignment = Enum.TextXAlignment.Left
+evInfo.TextYAlignment = Enum.TextYAlignment.Top
+evInfo.LayoutOrder = 5
+evInfo.Parent = tabEvent
+mkCorner(evInfo)
+local evPad = Instance.new("UIPadding")
+evPad.PaddingLeft = UDim.new(0, 10); evPad.PaddingTop = UDim.new(0, 10)
+evPad.Parent = evInfo
+
+-- ===== minimize =====
+local minimized = false
+btnMin.MouseButton1Click:Connect(function()
+    minimized = not minimized
+    body.Visible = not minimized
+    tabBar.Visible = not minimized
+    btnMin.Text = minimized and "+" or "—"
+    if minimized then
+        mainFrame.Size = UDim2.new(0, 340, 0, 40)
+    else
+        mainFrame.Size = UDim2.new(0, 340, 0.85, 0)
+    end
+end)
+
+-- status updater
+task.spawn(function()
+    while true do
+        local rod = get_equipped_rod()
+        local rodStr = rod and ("✅ " .. rod.Name) or "❌ not equipped"
+        local adminStr = adminFound and ("⚠ " .. adminName) or "✅ none"
+        local modeStr = running and "🟢 running" or "⏸ idle"
+
+        statusText.Text = string.format(
+            "ROD: %s\nADMIN: %s\nMODE: %s\nCAST: %.0f%%",
+            rodStr, adminStr, modeStr, castFill * 100
+        )
+
+        vCaught.Text = tostring(stats.caught)
+        vSold.Text = tostring(stats.sold)
+
+        if running and not adminFound then
+            if btnStart.Text ~= "■   STOP" then
+                btnStart.Text = "■   STOP"
+                btnStart.BackgroundColor3 = Color3.fromRGB(180, 35, 35)
+            end
+        else
+            if btnStart.Text ~= "▶   START AUTO" then
+                btnStart.Text = "▶   START AUTO"
+                btnStart.BackgroundColor3 = Color3.fromRGB(35, 155, 85)
+            end
+        end
+
+        local evPosStr = eventPos and ("✅ saved") or "❌ none"
+        local evDetectStr = lastEventDetect and "🟢 detected" or "⚪ none"
+        evStatus.Text = string.format(
+            "EVENT POS: %s\nEVENT DETECT: %s\nAUTO: %s\nTP COOLDOWN: %ds",
+            evPosStr, evDetectStr,
+            autoEvent and "ON" or "OFF",
+            CONFIG.event_tp_cooldown
+        )
+
+        task.wait(0.3)
+    end
+end)
+
+selectTab(1)
+log("auto-fisch v5 started")
+task.spawn(main)
