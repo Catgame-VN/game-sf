@@ -1,0 +1,580 @@
+-- saveinstance_v2.lua — catlazy
+-- save script source + models + fail report
+
+if not game:IsLoaded() then game.Loaded:Wait() end
+
+local Players = game:GetService("Players")
+local LP = Players.LocalPlayer
+
+local CONFIG = {
+    output_file = "game_save.rbxlx",
+    report_file = "save_report.txt",
+    max_depth = 30,
+    decompile = true,
+    save_workspace = true,
+    save_replicatedstorage = true,
+    save_startergui = true,
+    save_starterpack = true,
+    save_replicatedfirst = true,
+    save_playergui = true,
+    save_lighting = false,   -- bật nếu cần
+    ignore_classes = {
+        ["Player"] = true,
+        ["Players"] = true,
+        ["Camera"] = true,
+        ["Terrain"] = true,   -- terrain nặng, tắt mặc định
+    },
+    ignore_names = {
+        ["Chat"] = true,
+        ["RobloxLoadingScreen"] = true,
+        ["TouchGui"] = true,
+        ["DevConsole"] = true,
+        ["CoreGui"] = true,
+    },
+}
+
+-- ===== STATE =====
+local Stats = {
+    ok_instances = 0,
+    fail_instances = 0,
+    scripts_ok = 0,
+    scripts_fail = 0,
+    models_ok = 0,
+    decompiled = 0,
+    source_only = 0,
+    fails = {},  -- {name, class, reason}
+}
+
+local function log(m) print("[save] " .. m) end
+
+local function notify(msg, dur)
+    pcall(function()
+        local h = Instance.new("Hint")
+        h.Text = tostring(msg)
+        h.Parent = workspace
+        task.delay(dur or 5, function() if h then h:Destroy() end end)
+    end)
+    print("[save][notify] " .. tostring(msg))
+end
+
+local function record_fail(name, class, reason)
+    Stats.fail_instances = Stats.fail_instances + 1
+    table.insert(Stats.fails, {
+        name = tostring(name or "?"),
+        class = tostring(class or "?"),
+        reason = tostring(reason or "unknown"),
+    })
+end
+
+-- ===== XML ESCAPE =====
+local function attr_escape(s)
+    if s == nil then return "" end
+    s = tostring(s)
+    s = s:gsub("&", "&amp;")
+    s = s:gsub('"', "&quot;")
+    s = s:gsub("<", "&lt;")
+    s = s:gsub(">", "&gt;")
+    return s
+end
+
+local function cdata_escape(s)
+    if s == nil then return "" end
+    s = tostring(s)
+    s = s:gsub("]]>", "]]]]><![CDATA[>")
+    return s
+end
+
+-- ===== SCRIPT SOURCE =====
+local function get_script_source(obj)
+    local class = obj.ClassName
+    if class ~= "LocalScript" and class ~= "ModuleScript" and class ~= "Script" then
+        return nil, "not_script"
+    end
+
+    -- 1. decompile nếu có
+    if CONFIG.decompile and type(decompile) == "function" then
+        local ok, result = pcall(decompile, obj)
+        if ok and type(result) == "string" and #result > 0 then
+            Stats.decompiled = Stats.decompiled + 1
+            return result, "decompiled"
+        end
+    end
+
+    -- 2. Source trực tiếp
+    local ok, src = pcall(function() return obj.Source end)
+    if ok and type(src) == "string" and #src > 0 then
+        Stats.source_only = Stats.source_only + 1
+        return src, "source"
+    end
+
+    -- 3. cả 2 fail
+    return nil, "no_source"
+end
+
+-- ===== PROPERTY DUMP =====
+local props_by_class = {
+    BasePart = {
+        "Anchored","CanCollide","Transparency","Reflectance",
+        "Size","CFrame","Color","BrickColor","Material",
+        "TopSurface","BottomSurface","LeftSurface","RightSurface",
+        "FrontSurface","BackSurface","Massless","CanTouch","CanQuery",
+        "CastShadow","Shape",
+    },
+    Part = {
+        "Anchored","CanCollide","Transparency","Size","CFrame",
+        "Color","BrickColor","Material","Shape","Name",
+    },
+    MeshPart = {
+        "MeshId","TextureID","Anchored","CanCollide","Size",
+        "CFrame","Color","Material","Name","DoubleSided",
+    },
+    SpecialMesh = {
+        "MeshId","TextureId","MeshType","Scale","Offset","Name",
+    },
+    Model = {"Name","PrimaryPart","WorldPivot"},
+    Folder = {"Name"},
+    Script = {"Name","Enabled","Disabled"},
+    LocalScript = {"Name","Enabled","Disabled"},
+    ModuleScript = {"Name"},
+    TextLabel = {
+        "Text","TextColor3","TextSize","TextScaled","Font",
+        "BackgroundColor3","BackgroundTransparency","Size",
+        "Position","AnchorPoint","TextXAlignment","TextYAlignment",
+        "Visible","Name","ZIndex","RichText",
+    },
+    TextButton = {
+        "Text","TextColor3","TextSize","BackgroundColor3",
+        "Size","Position","Visible","Name","AutoButtonColor",
+    },
+    TextBox = {
+        "Text","PlaceholderText","TextColor3","BackgroundColor3",
+        "Size","Position","Visible","Name","ClearTextOnFocus",
+    },
+    Frame = {
+        "BackgroundColor3","BackgroundTransparency","Size",
+        "Position","AnchorPoint","Visible","Name","ZIndex",
+    },
+    ScrollingFrame = {
+        "CanvasSize","ScrollBarThickness","BackgroundColor3",
+        "Size","Position","Visible","Name",
+    },
+    ImageLabel = {
+        "Image","ImageColor3","ImageTransparency","Size",
+        "Position","Visible","Name",
+    },
+    ImageButton = {
+        "Image","ImageColor3","Size","Position","Visible","Name",
+    },
+    Sound = {"SoundId","Volume","Looped","Playing","Name"},
+    Animation = {"AnimationId","Name"},
+    Decal = {"Texture","Face","Transparency","Name"},
+    Texture = {"Texture","Face","StudsPerTileU","StudsPerTileV","Name"},
+    Humanoid = {"Name","WalkSpeed","JumpPower","Health","MaxHealth","HipHeight"},
+    PointLight = {"Brightness","Color","Range","Name","Enabled"},
+    SpotLight = {"Brightness","Color","Range","Angle","Name","Enabled"},
+    SurfaceLight = {"Brightness","Color","Range","Angle","Name","Enabled"},
+    ParticleEmitter = {"Rate","Lifetime","Speed","Name","Enabled","Texture"},
+    Fire = {"Size","Heat","Color","Enabled","Name"},
+    Smoke = {"Size","Opacity","RiseVelocity","Enabled","Name"},
+    Attachment = {"Name","Position","Orientation"},
+    RemoteEvent = {"Name"},
+    RemoteFunction = {"Name"},
+    BindableEvent = {"Name"},
+    BindableFunction = {"Name"},
+    StringValue = {"Name","Value"},
+    NumberValue = {"Name","Value"},
+    BoolValue = {"Name","Value"},
+    IntValue = {"Name","Value"},
+    ObjectValue = {"Name"},
+    BillboardGui = {"Size","StudsOffset","AlwaysOnTop","Enabled","Name"},
+    SurfaceGui = {"Face","CanvasSize","AlwaysOnTop","Enabled","Name"},
+    ProximityPrompt = {
+        "ActionText","ObjectText","HoldDuration","MaxActivationDistance","Enabled","Name",
+    },
+    Configuration = {"Name"},
+    Tool = {"Name","CanBeDropped","RequiresHandle","TextureId"},
+    Accessory = {"Name"},
+    Hat = {"Name"},
+    WedgePart = {"Anchored","CanCollide","Size","CFrame","Color","Material","Name"},
+    TrussPart = {"Anchored","CanCollide","Size","CFrame","Color","Material","Name"},
+    SpawnLocation = {"Anchored","CanCollide","Size","CFrame","Name","Enabled"},
+    Seat = {"Anchored","CanCollide","Size","CFrame","Name"},
+}
+
+local function dump_properties(obj)
+    local out = {}
+    local class = obj.ClassName
+    local prop_list = props_by_class[class] or {"Name"}
+
+    for _, pname in ipairs(prop_list) do
+        local ok, v = pcall(function() return obj[pname] end)
+        if not ok or v == nil then
+            -- property không tồn tại trên class này, skip silent
+        else
+            local t = typeof(v)
+            if t == "Instance" then
+                -- skip reference
+            elseif t == "string" then
+                out[pname] = {type = "string", value = v}
+            elseif t == "number" then
+                out[pname] = {type = "number", value = v}
+            elseif t == "boolean" then
+                out[pname] = {type = "boolean", value = v}
+            elseif t == "Vector3" then
+                out[pname] = {type = "Vector3", value = {v.X, v.Y, v.Z}}
+            elseif t == "Vector2" then
+                out[pname] = {type = "Vector2", value = {v.X, v.Y}}
+            elseif t == "CFrame" then
+                out[pname] = {type = "CFrame", value = {v:GetComponents()}}
+            elseif t == "Color3" then
+                out[pname] = {type = "Color3", value = {v.R, v.G, v.B}}
+            elseif t == "UDim2" then
+                out[pname] = {type = "UDim2", value = {v.X.Scale, v.X.Offset, v.Y.Scale, v.Y.Offset}}
+            elseif t == "UDim" then
+                out[pname] = {type = "UDim", value = {v.Scale, v.Offset}}
+            elseif t == "BrickColor" then
+                out[pname] = {type = "BrickColor", value = v.Number}
+            elseif t == "EnumItem" then
+                out[pname] = {
+                    type = "EnumItem",
+                    value = tostring(v),
+                }
+            end
+        end
+    end
+
+    return out
+end
+
+-- ===== XML SERIALIZER =====
+local ref_counter = 0
+local function next_ref()
+    ref_counter = ref_counter + 1
+    return string.format("RBX%032X", ref_counter)
+end
+
+local function serialize_props(obj, parts)
+    table.insert(parts, string.format(
+        '<string name="Name">%s</string>', attr_escape(obj.Name)
+    ))
+
+    -- script source
+    if obj.ClassName == "LocalScript" or obj.ClassName == "ModuleScript" or obj.ClassName == "Script" then
+        local src, src_type = get_script_source(obj)
+        if src then
+            table.insert(parts, string.format(
+                '<ProtectedString name="Source"><![CDATA[%s]]></ProtectedString>',
+                cdata_escape(src)
+            ))
+            Stats.scripts_ok = Stats.scripts_ok + 1
+        else
+            Stats.scripts_fail = Stats.scripts_fail + 1
+            record_fail(obj:GetFullName(), obj.ClassName, src_type or "no_source")
+        end
+    end
+
+    local props = dump_properties(obj)
+    for pname, pdata in pairs(props) do
+        if pname == "Name" then
+            -- skip, đã thêm
+        else
+            local t = pdata.type
+            local v = pdata.value
+
+            if t == "string" then
+                table.insert(parts, string.format(
+                    '<string name="%s">%s</string>',
+                    attr_escape(pname), attr_escape(v)
+                ))
+            elseif t == "number" then
+                if math.floor(v) == v and math.abs(v) < 2147483647 then
+                    table.insert(parts, string.format(
+                        '<int name="%s">%d</int>', attr_escape(pname), v
+                    ))
+                else
+                    table.insert(parts, string.format(
+                        '<float name="%s">%.6f</float>', attr_escape(pname), v
+                    ))
+                end
+            elseif t == "boolean" then
+                table.insert(parts, string.format(
+                    '<bool name="%s">%s</bool>',
+                    attr_escape(pname), v and "true" or "false"
+                ))
+            elseif t == "Vector3" then
+                table.insert(parts, string.format(
+                    '<Vector3 name="%s"><X>%.4f</X><Y>%.4f</Y><Z>%.4f</Z></Vector3>',
+                    attr_escape(pname), v[1], v[2], v[3]
+                ))
+            elseif t == "Vector2" then
+                table.insert(parts, string.format(
+                    '<Vector2 name="%s"><X>%.4f</X><Y>%.4f</Y></Vector2>',
+                    attr_escape(pname), v[1], v[2]
+                ))
+            elseif t == "CFrame" then
+                table.insert(parts, string.format(
+                    '<CoordinateFrame name="%s">' ..
+                    '<X>%.4f</X><Y>%.4f</Y><Z>%.4f</Z>' ..
+                    '<R00>%.4f</R00><R01>%.4f</R01><R02>%.4f</R02>' ..
+                    '<R10>%.4f</R10><R11>%.4f</R11><R12>%.4f</R12>' ..
+                    '<R20>%.4f</R20><R21>%.4f</R21><R22>%.4f</R22>' ..
+                    '</CoordinateFrame>',
+                    attr_escape(pname),
+                    v[1], v[2], v[3],
+                    v[4], v[5], v[6],
+                    v[7], v[8], v[9],
+                    v[10], v[11], v[12]
+                ))
+            elseif t == "Color3" then
+                table.insert(parts, string.format(
+                    '<Color3 name="%s"><R>%.4f</R><G>%.4f</G><B>%.4f</B></Color3>',
+                    attr_escape(pname), v[1], v[2], v[3]
+                ))
+            elseif t == "UDim2" then
+                table.insert(parts, string.format(
+                    '<UDim2 name="%s">' ..
+                    '<XS>%.4f</XS><XO>%d</XO>' ..
+                    '<YS>%.4f</YS><YO>%d</YO>' ..
+                    '</UDim2>',
+                    attr_escape(pname), v[1], v[2], v[3], v[4]
+                ))
+            elseif t == "UDim" then
+                table.insert(parts, string.format(
+                    '<UDim name="%s"><S>%.4f</S><O>%d</O></UDim>',
+                    attr_escape(pname), v[1], v[2]
+                ))
+            elseif t == "BrickColor" then
+                table.insert(parts, string.format(
+                    '<int name="%s">%d</int>', attr_escape(pname), v
+                ))
+            elseif t == "EnumItem" then
+                -- parse "Enum.Material.Plastic" → enum name + value
+                local enum_str = tostring(v)
+                local enum_parts = {}
+                for s in enum_str:gmatch("[^%.]+") do
+                    table.insert(enum_parts, s)
+                end
+                if #enum_parts == 3 then
+                    local enum_value = 0
+                    pcall(function()
+                        local enum_type = Enum[enum_parts[2]]
+                        if enum_type then
+                            local item = enum_type[enum_parts[3]]
+                            if item then enum_value = item.Value end
+                        end
+                    end)
+                    table.insert(parts, string.format(
+                        '<token name="%s">%d</token>',
+                        attr_escape(pname), enum_value
+                    ))
+                end
+            end
+        end
+    end
+end
+
+local function serialize_instance(obj, depth, visited, parts)
+    if depth > CONFIG.max_depth then
+        record_fail(obj:GetFullName(), obj.ClassName, "max_depth")
+        return
+    end
+    if visited[obj] then return end
+    visited[obj] = true
+
+    local class = obj.ClassName
+    if CONFIG.ignore_classes[class] then return end
+    if CONFIG.ignore_names[obj.Name] then return end
+
+    local ref = next_ref()
+
+    local ok, err = pcall(function()
+        table.insert(parts, string.format(
+            '<Item class="%s" referent="%s">',
+            attr_escape(class), ref
+        ))
+        table.insert(parts, "<Properties>")
+        serialize_props(obj, parts)
+        table.insert(parts, "</Properties>")
+    end)
+
+    if not ok then
+        record_fail(obj:GetFullName(), class, "props_error: " .. tostring(err))
+        return
+    end
+
+    Stats.ok_instances = Stats.ok_instances + 1
+    if class == "Model" or class == "MeshPart" or class == "Part" or class == "WedgePart" then
+        Stats.models_ok = Stats.models_ok + 1
+    end
+
+    -- children
+    local children_ok, children = pcall(function() return obj:GetChildren() end)
+    if children_ok and children then
+        for _, child in ipairs(children) do
+            local child_ok, child_err = pcall(function()
+                serialize_instance(child, depth + 1, visited, parts)
+            end)
+            if not child_ok then
+                record_fail(child:GetFullName(), child.ClassName, "child_error: " .. tostring(child_err))
+            end
+        end
+    end
+
+    table.insert(parts, "</Item>")
+end
+
+-- ===== ROOTS =====
+local function get_roots()
+    local roots = {}
+
+    if CONFIG.save_workspace then
+        pcall(function() table.insert(roots, workspace) end)
+    end
+    if CONFIG.save_replicatedstorage then
+        pcall(function() table.insert(roots, game:GetService("ReplicatedStorage")) end)
+    end
+    if CONFIG.save_replicatedfirst then
+        pcall(function() table.insert(roots, game:GetService("ReplicatedFirst")) end)
+    end
+    if CONFIG.save_startergui then
+        pcall(function() table.insert(roots, game:GetService("StarterGui")) end)
+    end
+    if CONFIG.save_starterpack then
+        pcall(function() table.insert(roots, game:GetService("StarterPack")) end)
+    end
+    if CONFIG.save_playergui then
+        pcall(function()
+            local pg = LP:FindFirstChild("PlayerGui")
+            if pg then table.insert(roots, pg) end
+        end)
+    end
+    if CONFIG.save_lighting then
+        pcall(function() table.insert(roots, game:GetService("Lighting")) end)
+    end
+
+    return roots
+end
+
+-- ===== BUILD =====
+local function build_xml()
+    local parts = {}
+    table.insert(parts, '<?xml version="1.0" encoding="utf-8"?>')
+    table.insert(parts, '<roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" ' ..
+        'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" ' ..
+        'xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd" version="4">')
+    table.insert(parts, "<External>null</External>")
+    table.insert(parts, "<External>nil</External>")
+
+    local roots = get_roots()
+    local visited = {}
+
+    for i, root in ipairs(roots) do
+        log(("root [%d/%d] %s (%s)"):format(i, #roots, root.Name, root.ClassName))
+        local ok, err = pcall(function()
+            serialize_instance(root, 0, visited, parts)
+        end)
+        if not ok then
+            record_fail(root.Name, root.ClassName, "root_error: " .. tostring(err))
+        end
+    end
+
+    table.insert(parts, "</roblox>")
+    return table.concat(parts, "\n")
+end
+
+-- ===== REPORT =====
+local function build_report()
+    local lines = {}
+    table.insert(lines, "=== saveinstance report ===")
+    table.insert(lines, ("time: %s"):format(os.date("%Y-%m-%d %H:%M:%S")))
+    table.insert(lines, ("ok_instances: %d"):format(Stats.ok_instances))
+    table.insert(lines, ("fail_instances: %d"):format(Stats.fail_instances))
+    table.insert(lines, ("models_ok: %d"):format(Stats.models_ok))
+    table.insert(lines, ("scripts_ok: %d"):format(Stats.scripts_ok))
+    table.insert(lines, ("scripts_fail: %d"):format(Stats.scripts_fail))
+    table.insert(lines, ("decompiled: %d"):format(Stats.decompiled))
+    table.insert(lines, ("source_only: %d"):format(Stats.source_only))
+    table.insert(lines, "")
+    table.insert(lines, "=== fails ===")
+
+    if #Stats.fails == 0 then
+        table.insert(lines, "(none)")
+    else
+        for i, f in ipairs(Stats.fails) do
+            table.insert(lines, ("[%d] %s | %s | %s"):format(i, f.name, f.class, f.reason))
+        end
+    end
+
+    return table.concat(lines, "\n")
+end
+
+-- ===== MAIN =====
+local function save()
+    local start = tick()
+    log("building xml...")
+
+    local xml
+    local ok, err = pcall(build_xml)
+    if not ok then
+        log("FATAL build error: " .. tostring(err))
+        notify("save failed: " .. tostring(err), 8)
+        return
+    end
+
+    if not xml or #xml == 0 then
+        log("empty xml")
+        notify("empty xml", 5)
+        return
+    end
+
+    local mb = #xml / 1024 / 1024
+    log(("xml built: %.2f MB in %.1fs"):format(mb, tick() - start))
+
+    -- write xml
+    if type(writefile) ~= "function" then
+        log("writefile unavailable, printing to console")
+        print(xml)
+    else
+        local wok, werr = pcall(writefile, CONFIG.output_file, xml)
+        if wok then
+            log("SAVED: " .. CONFIG.output_file)
+        else
+            log("WRITE FAIL: " .. tostring(werr))
+            record_fail(CONFIG.output_file, "file", "write_error: " .. tostring(werr))
+        end
+    end
+
+    -- write report
+    local report = build_report()
+    print(report)
+    if type(writefile) == "function" then
+        pcall(writefile, CONFIG.report_file, report)
+        log("report: " .. CONFIG.report_file)
+    end
+
+    local summary = ("done: ok=%d fail=%d script_ok=%d script_fail=%d"):format(
+        Stats.ok_instances, Stats.fail_instances,
+        Stats.scripts_ok, Stats.scripts_fail
+    )
+    log(summary)
+    notify(summary, 8)
+end
+
+-- ===== ENTRY =====
+log("=== saveinstance v2 ===")
+log("writefile: " .. tostring(type(writefile) == "function"))
+log("decompile: " .. tostring(type(decompile) == "function"))
+log("script_source: " .. tostring(type(getscriptbytecode) == "function" or type(decompile) == "function"))
+
+if type(saveinstance) == "function" then
+    log("native saveinstance available, using it")
+    local ok, err = pcall(saveinstance, CONFIG.output_file)
+    if ok then
+        notify("native saveinstance OK", 5)
+    else
+        log("native failed: " .. tostring(err) .. ", fallback xml")
+        save()
+    end
+else
+    save()
+end
