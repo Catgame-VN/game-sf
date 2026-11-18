@@ -1,6 +1,7 @@
 --[[
-v2.2: anti-lag + auto hop 15m + auto re-exec
-fix: teleport xuống dưới cây, tránh kẹt part / lỗi CFrame
+v2.4: anti-lag + auto hop 15m + auto re-exec
+fix: đứng DƯỚI gốc cây, offset âm Y sâu
+     + stuck detector + CanCollide bypass
 ]]
 if queue_on_teleport then
     queue_on_teleport([[
@@ -22,10 +23,13 @@ local HOP_INTERVAL = 15 * 60
 local CANDY_REFRESH = 0.15
 local DOOR_REFRESH = 0.5
 
--- offset trốn dưới cây: lùi xuống 3 stud, hơi ra sau 1 stud
-local DOOR_OFFSET = Vector3.new(0, -3, 0)
--- sau khi fire prompt thì né ra xa cây để không kẹt
-local HIDE_OFFSET = Vector3.new(0, -2, 4)
+-- đứng DƯỚI gốc cây: âm Y sâu
+local UNDER_OFFSET = Vector3.new(0, -6, 0)
+-- nếu door part nằm sát ground, ép xuống thêm
+local UNDER_MIN_Y = -4
+-- stuck check
+local STUCK_TIME = 3
+local STUCK_MOVE_MIN = 1.5
 
 local status = Drawing.new("Text")
 status.Text = "Status: Booting..."
@@ -36,13 +40,8 @@ status.Color = Color3.fromRGB(255, 255, 255)
 status.Position = Vector2.new(camera.ViewportSize.X / 2, 35)
 status.Visible = true
 
-local function setStatus(msg)
-    status.Text = "Status: " .. msg
-end
-
-local function cleanup()
-    if status then status:Remove() end
-end
+local function setStatus(msg) status.Text = "Status: " .. msg end
+local function cleanup() if status then status:Remove() end end
 
 local function hopServer()
     setStatus("Hopping server...")
@@ -63,50 +62,61 @@ local function hopServer()
             end
         end
     end
-    pcall(function()
-        TeleportService:Teleport(game.PlaceId, player)
-    end)
+    pcall(function() TeleportService:Teleport(game.PlaceId, player) end)
 end
 
 local hopStart = tick()
 local lastCandyScan = 0
 local lastDoorScan = 0
-local cachedCandy = nil
-local cachedDoor = nil
-local cachedDoorPart = nil
+local cachedCandy, cachedDoor, cachedDoorPart = nil, nil, nil
 local promptCooldown = 0
+local lastPos = Vector3.zero
+local lastMoveCheck = 0
+local stuckCount = 0
 
 local function isBusy(char)
     return char:FindFirstChild("RootAnchor") or char:FindFirstChild("NoRotate")
 end
 
--- teleport an toàn: set CFrame, nếu lỗi thì pcall bắt, không crash loop
 local function safeTeleport(root, pos, hum)
+    local prevCollide = root.CanCollide
+    pcall(function() root.CanCollide = false end)
     local ok = pcall(function()
         root.CFrame = CFrame.new(pos) * CFrame.Angles(0, math.rad(root.Orientation.Y), 0)
     end)
     if not ok then
-        pcall(function()
-            root.CFrame = CFrame.new(pos)
-        end)
+        pcall(function() root.CFrame = CFrame.new(pos) end)
     end
     if hum then
         hum.Jump = true
-        hum:ChangeState(Enum.HumanoidStateType.Jumping)
+        pcall(function() hum:ChangeState(Enum.HumanoidStateType.Jumping) end)
     end
+    task.wait(0.15)
+    pcall(function() root.CanCollide = prevCollide end)
+end
+
+-- tìm vị trí DƯỚI gốc cây: lấy X,Z của door part, ép Y xuống
+local function underTreePos(doorPart)
+    local p = doorPart.Position + UNDER_OFFSET
+    -- nếu door part cao, ép Y âm thêm để chui sâu
+    if doorPart.Position.Y > 5 then
+        p = Vector3.new(doorPart.Position.X, doorPart.Position.Y - 8, doorPart.Position.Z)
+    end
+    -- safety: không xuống quá sâu dưới ground
+    if p.Y < UNDER_MIN_Y then
+        p = Vector3.new(p.X, UNDER_MIN_Y, p.Z)
+    end
+    return p
 end
 
 local function scanCandy(root)
     local best, bestDist = nil, math.huge
     local children = folder:GetChildren()
     for i = 1, #children do
-        local c = children[i]
-        local rest = c:GetAttribute("Rest")
+        local rest = children[i]:GetAttribute("Rest")
         if rest then
             local d = (root.Position - rest.Position).Magnitude
-            if d < bestDist then
-                bestDist, best = d, rest
-            end
+            if d < bestDist then bestDist, best = d, rest end
         end
     end
     return best
@@ -143,8 +153,7 @@ task.spawn(function()
     while alive do
         local now = tick()
         if now - hopStart >= HOP_INTERVAL then
-            hopServer()
-            return
+            hopServer(); return
         end
 
         local char = player.Character
@@ -158,6 +167,20 @@ task.spawn(function()
         elseif isBusy(char) then
             setStatus("Door...")
         else
+            if now - lastMoveCheck > 1 then
+                local moved = (root.Position - lastPos).Magnitude
+                if moved < STUCK_MOVE_MIN then stuckCount = stuckCount + 1
+                else stuckCount = 0 end
+                lastPos = root.Position
+                lastMoveCheck = now
+                if stuckCount >= STUCK_TIME then
+                    setStatus("Stuck - escaping...")
+                    safeTeleport(root, root.Position + Vector3.new(0, 25, 0), hum)
+                    task.wait(0.3)
+                    stuckCount = 0
+                end
+            end
+
             if now - lastCandyScan > CANDY_REFRESH then
                 lastCandyScan = now
                 cachedCandy = scanCandy(root)
@@ -165,7 +188,6 @@ task.spawn(function()
 
             if cachedCandy then
                 setStatus("Collecting candy...")
-                -- teleport lên trên candy 4 stud, dùng safeTeleport tránh kẹt
                 safeTeleport(root, cachedCandy.Position + Vector3.new(0, 4, 0), hum)
             else
                 if now - lastDoorScan > DOOR_REFRESH then
@@ -175,24 +197,19 @@ task.spawn(function()
 
                 if cachedDoor and cachedDoorPart then
                     if now >= promptCooldown then
-                        setStatus("Visiting closest door...")
-                        -- trốn xuống DƯỚI cây: offset âm Y, tránh kẹt part
-                        local doorPos = cachedDoorPart.Position + DOOR_OFFSET
-                        safeTeleport(root, doorPos, hum)
-                        -- chờ 1 nhịp cho humanoid ổn định rồi mới fire
+                        setStatus("Going under tree...")
+                        -- chui xuống DƯỚI gốc cây
+                        local up = underTreePos(cachedDoorPart)
+                        safeTeleport(root, up, hum)
                         task.wait(0.25)
                         pcall(function() fireproximityprompt(cachedDoor) end)
-                        -- né ra khỏi cây sau khi fire, tránh kẹt lần sau
-                        local hidePos = cachedDoorPart.Position + HIDE_OFFSET
-                        safeTeleport(root, hidePos, hum)
-                        promptCooldown = now + 1
+                        promptCooldown = now + 0.8
                     else
                         setStatus("Cooldown...")
                     end
                 else
                     setStatus("No candy - hopping early...")
-                    hopServer()
-                    return
+                    hopServer(); return
                 end
             end
         end
