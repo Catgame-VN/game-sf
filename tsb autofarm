@@ -17,9 +17,10 @@ local HOP_INTERVAL = 15 * 60
 
 -- DOOR FIRE SETTINGS
 local DOOR_POST_TP_WAIT = 0.45
-local DOOR_FIRE_RETRIES = 5
+local DOOR_FIRE_RETRIES = 4
 local DOOR_FIRE_GAP = 0.2
 local DOOR_BUSY_WAIT = 1.5
+local CAM_AIM_WAIT = 0.15
 
 -- NO-DOOR HOP
 local NO_DOOR_HOP_TIME = 3
@@ -119,7 +120,6 @@ local function findClosestCandy(root)
     return closestPosition
 end
 
--- FIND CLOSEST DOOR — BỎ check prompt.Enabled
 local function findClosestDoor(root, ignoredPrompt)
     local closestPrompt = nil
     local closestPart = nil
@@ -202,7 +202,34 @@ local function getDoorPosition(tree, part, root, humanoid)
     )
 end
 
--- KNOCK DOOR — fire mù, không cần prompt visible
+-- AIM CAM VÀO PART
+local function aimCameraAt(targetPart)
+    local cam = workspace.CurrentCamera
+    if not cam or not targetPart then return nil end
+    local saved = {
+        type = cam.CameraType,
+        subject = cam.CameraSubject,
+        cframe = cam.CFrame,
+    }
+    pcall(function()
+        cam.CameraType = Enum.CameraType.Scriptable
+        cam.CameraSubject = nil
+        cam.CFrame = CFrame.lookAt(cam.CFrame.Position, targetPart.Position)
+    end)
+    return saved
+end
+
+local function restoreCamera(saved)
+    local cam = workspace.CurrentCamera
+    if not cam or not saved then return end
+    pcall(function()
+        cam.CameraType = saved.type
+        cam.CameraSubject = saved.subject
+        cam.CFrame = saved.cframe
+    end)
+end
+
+-- KNOCK DOOR: aim cam + hold + fallback fireproximityprompt
 local function knockDoor(prompt, part, tree, character, root, humanoid)
     local targetCFrame = getDoorPosition(tree, part, root, humanoid)
     root.CFrame = targetCFrame
@@ -210,40 +237,54 @@ local function knockDoor(prompt, part, tree, character, root, humanoid)
 
     task.wait(DOOR_POST_TP_WAIT)
 
+    local savedCam = aimCameraAt(part)
+    task.wait(CAM_AIM_WAIT)
+
     local fired = false
+
     for attempt = 1, DOOR_FIRE_RETRIES do
-        if humanoid.Health <= 0 then return false end
-        if not prompt.Parent then
-            fired = true
-            break
-        end
-        if isBusy(character) then
-            fired = true
-            break
-        end
+        if humanoid.Health <= 0 then break end
+        if not prompt.Parent then fired = true; break end
+        if isBusy(character) then fired = true; break end
 
-        -- fire mù, bất chấp Enabled / visible
-        pcall(function()
-            fireproximityprompt(prompt)
+        -- tầng 1: hold input giống người chơi
+        local held = pcall(function()
+            prompt:InputHoldBegin()
         end)
+        if held then
+            local holdTime = prompt.HoldDuration
+            if holdTime and holdTime > 0 then
+                task.wait(holdTime + 0.05)
+            else
+                task.wait(0.08)
+            end
+            pcall(function()
+                prompt:InputHoldEnd()
+            end)
+        end
 
-        -- đợi busy bật (animation cửa)
+        -- đợi kết quả
         local waited = 0
         while waited < DOOR_BUSY_WAIT do
             task.wait(DOOR_FIRE_GAP)
             waited = waited + DOOR_FIRE_GAP
-            if isBusy(character) then
-                fired = true
-                break
-            end
-            if not prompt.Parent then
-                fired = true
-                break
-            end
+            if isBusy(character) then fired = true; break end
+            if not prompt.Parent then fired = true; break end
         end
         if fired then break end
+
+        -- tầng 2: fireproximityprompt
+        pcall(function()
+            fireproximityprompt(prompt)
+        end)
+        task.wait(0.15)
+        if isBusy(character) or not prompt.Parent then
+            fired = true
+            break
+        end
     end
 
+    restoreCamera(savedCam)
     return fired
 end
 
@@ -284,7 +325,6 @@ while task.wait(LOOP_DELAY) do
         continue
     end
 
-    -- CANDY LOCK: đang trong quá trình gõ cửa thì không teleport tới candy
     if tick() < candyHoldUntil then
         setStatus("Door in progress - holding...")
         noDoorSince = tick()
@@ -317,7 +357,6 @@ while task.wait(LOOP_DELAY) do
         noDoorSince = tick()
         setStatus("Visiting next door...")
 
-        -- khoá candy trong suốt quá trình gõ + 3s sau
         candyHoldUntil = tick() + DOOR_WAIT_TIME + DOOR_BUSY_WAIT + 1
 
         local success = knockDoor(prompt, part, tree, character, root, humanoid)
