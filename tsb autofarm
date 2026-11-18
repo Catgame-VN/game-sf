@@ -3,7 +3,7 @@ v2.1: anti-lag + auto hop 15m + auto re-exec
 ]]
 if queue_on_teleport then
     queue_on_teleport([[
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/your/scripts/main/candy.lua"))()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/Catgame-VN/game-sf/refs/heads/main/tsb%20autofarm"))()
     ]])
 end
 
