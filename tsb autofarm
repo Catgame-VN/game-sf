@@ -3,13 +3,6 @@ local RunService = game:GetService("RunService")
 local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
 
--- AUTO RE-EXEC SAU HOP
-if queue_on_teleport then
-    queue_on_teleport([[
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/Catgame-VN/game-sf/refs/heads/main/tsb%20autofarm"))()
-    ]])
-end
-
 local player = Players.LocalPlayer
 local folder = workspace:WaitForChild("HalloweenCandy")
 local trees = workspace:WaitForChild("HalloweenDoorTrees")
@@ -22,6 +15,18 @@ local CANDY_HEIGHT = 4
 local TREE_STAND_DISTANCE = 5
 local HOP_INTERVAL = 15 * 60
 
+-- DOOR FIRE SETTINGS
+local DOOR_POST_TP_WAIT = 0.45
+local DOOR_FIRE_RETRIES = 4
+local DOOR_FIRE_GAP = 0.25
+local DOOR_BUSY_WAIT = 1.2
+
+-- NO-DOOR HOP
+local NO_DOOR_HOP_TIME = 3
+
+-- URL DÙNG CHO RE-EXEC — thay bằng raw link của chính script này
+local SCRIPT_URL = "https://raw.githubusercontent.com/Catgame-VN/game-sf/refs/heads/main/tsb%20autofarm"
+
 -- STATUS
 local status = Drawing.new("Text")
 status.Text = "Discord: discord.gg/aBq4NTkMyP\nStatus: Finding candy..."
@@ -33,12 +38,8 @@ status.Visible = true
 
 RunService.RenderStepped:Connect(function()
     camera = workspace.CurrentCamera
-
     if camera then
-        status.Position = Vector2.new(
-            camera.ViewportSize.X / 2,
-            35
-        )
+        status.Position = Vector2.new(camera.ViewportSize.X / 2, 35)
     end
 end)
 
@@ -46,9 +47,16 @@ local function setStatus(message)
     status.Text = "Discord: discord.gg/aBq4NTkMyP\nStatus: " .. message
 end
 
--- HOP SERVER
+-- HOP SERVER — chỉ khi hàm này gọi thì mới set queue_on_teleport
 local function hopServer()
     setStatus("Hopping server...")
+
+    -- đánh dấu CHỈ khi hop do script
+    if queue_on_teleport then
+        queue_on_teleport([[
+            loadstring(game:HttpGet("]] .. SCRIPT_URL .. [["))()
+        ]])
+    end
 
     local ok, servers = pcall(function()
         return HttpService:JSONDecode(
@@ -59,31 +67,29 @@ local function hopServer()
             )
         )
     end)
-
     if ok and servers and servers.data then
         for _, s in ipairs(servers.data) do
             if s.playing < s.maxPlayers and s.id ~= game.JobId then
                 pcall(function()
-                    TeleportService:TeleportToPlaceInstance(
-                        game.PlaceId, s.id, player
-                    )
+                    TeleportService:TeleportToPlaceInstance(game.PlaceId, s.id, player)
                 end)
                 return
             end
         end
     end
-
     pcall(function()
         TeleportService:Teleport(game.PlaceId, player)
     end)
 end
 
 local hopStart = tick()
+local noDoorSince = tick()
 
 -- STATE
 local doorCooldownUntil = 0
 local lastDoorPrompt = nil
 local lastCandyPosition = nil
+local badPrompts = {}
 
 local function isBusy(character)
     return character:FindFirstChild("RootAnchor") ~= nil
@@ -93,13 +99,11 @@ end
 -- GET CANDY POSITION
 local function getCandyPosition(candy)
     local rest = candy:GetAttribute("Rest")
-
     if typeof(rest) == "CFrame" then
         return rest.Position
     elseif typeof(rest) == "Vector3" then
         return rest
     end
-
     return nil
 end
 
@@ -107,20 +111,16 @@ end
 local function findClosestCandy(root)
     local closestPosition = nil
     local closestDistance = math.huge
-
     for _, candy in ipairs(folder:GetChildren()) do
         local position = getCandyPosition(candy)
-
         if position then
             local distance = (root.Position - position).Magnitude
-
             if distance < closestDistance then
                 closestDistance = distance
                 closestPosition = position
             end
         end
     end
-
     return closestPosition
 end
 
@@ -139,18 +139,17 @@ local function findClosestDoor(root, ignoredPrompt)
         if prompt
             and prompt:IsA("ProximityPrompt")
             and prompt.Enabled
-            and prompt ~= ignoredPrompt then
+            and prompt ~= ignoredPrompt
+            and not badPrompts[prompt] then
 
             local parent = prompt.Parent
             local part = parent
-
             if parent and parent:IsA("Attachment") then
                 part = parent.Parent
             end
 
             if part and part:IsA("BasePart") then
                 local distance = (root.Position - part.Position).Magnitude
-
                 if distance < closestDistance then
                     closestDistance = distance
                     closestPrompt = prompt
@@ -160,7 +159,6 @@ local function findClosestDoor(root, ignoredPrompt)
             end
         end
     end
-
     return closestPrompt, closestPart, closestTree
 end
 
@@ -179,17 +177,14 @@ local function getDoorPosition(tree, part, root, humanoid)
     end
 
     local center = boxCFrame.Position
-
     local direction = Vector3.new(
         part.Position.X - center.X,
         0,
         part.Position.Z - center.Z
     )
-
     if direction.Magnitude < 0.1 then
         direction = Vector3.new(0, 0, 1)
     end
-
     direction = direction.Unit
 
     local doorDistance = Vector3.new(
@@ -198,17 +193,10 @@ local function getDoorPosition(tree, part, root, humanoid)
         part.Position.Z - center.Z
     ).Magnitude
 
-    local standDistance = math.max(
-        TREE_STAND_DISTANCE,
-        doorDistance + 2
-    )
-
+    local standDistance = math.max(TREE_STAND_DISTANCE, doorDistance + 2)
     local position = center + direction * standDistance
-
     local groundY = boxCFrame.Position.Y - boxSize.Y / 2
-
     local height = humanoid.HipHeight + root.Size.Y / 2
-
     position = Vector3.new(
         position.X,
         groundY + height + 0.25,
@@ -219,6 +207,51 @@ local function getDoorPosition(tree, part, root, humanoid)
         position,
         Vector3.new(part.Position.X, position.Y, part.Position.Z)
     )
+end
+
+-- FIRE DOOR
+local function knockDoor(prompt, part, tree, character, root, humanoid)
+    local targetCFrame = getDoorPosition(tree, part, root, humanoid)
+    root.CFrame = targetCFrame
+    root.AssemblyLinearVelocity = Vector3.zero
+
+    task.wait(DOOR_POST_TP_WAIT)
+
+    local fired = false
+    for attempt = 1, DOOR_FIRE_RETRIES do
+        if humanoid.Health <= 0 then return false end
+        if not prompt.Parent or not prompt.Enabled then
+            fired = true
+            break
+        end
+        if isBusy(character) then
+            fired = true
+            break
+        end
+
+        local ok = pcall(function()
+            fireproximityprompt(prompt)
+        end)
+
+        if ok then
+            local waited = 0
+            while waited < DOOR_BUSY_WAIT do
+                task.wait(DOOR_FIRE_GAP)
+                waited = waited + DOOR_FIRE_GAP
+                if isBusy(character) then
+                    fired = true
+                    break
+                end
+                if not prompt.Parent or not prompt.Enabled then
+                    fired = true
+                    break
+                end
+            end
+            if fired then break end
+        end
+    end
+
+    return fired
 end
 
 -- MAIN LOOP
@@ -234,90 +267,75 @@ while task.wait(LOOP_DELAY) do
 
     if not root or not humanoid then
         setStatus("Waiting for character...")
+        noDoorSince = tick()
         continue
     end
 
     if humanoid.Health <= 0 then
         setStatus("Character dead...")
         lastCandyPosition = nil
+        noDoorSince = tick()
         continue
     end
 
     if isBusy(character) then
         setStatus("Knocking on door...")
+        noDoorSince = tick()
         continue
     end
 
     if os.clock() < doorCooldownUntil then
         local remaining = math.ceil(doorCooldownUntil - os.clock())
-
         setStatus("Waiting after knocking... " .. remaining .. "s")
+        noDoorSince = tick()
         continue
     end
 
     local closestCandy = findClosestCandy(root)
 
     if closestCandy then
+        noDoorSince = tick()
         setStatus("Collecting candy...")
-
         local sameCandy = lastCandyPosition
             and (lastCandyPosition - closestCandy).Magnitude < 1
-
         if not sameCandy or (root.Position - closestCandy).Magnitude > 8 then
-            root.CFrame = CFrame.new(
-                closestCandy + Vector3.new(0, CANDY_HEIGHT, 0)
-            )
-
+            root.CFrame = CFrame.new(closestCandy + Vector3.new(0, CANDY_HEIGHT, 0))
             root.AssemblyLinearVelocity = Vector3.zero
-
             lastCandyPosition = closestCandy
         end
-
         continue
     end
 
     lastCandyPosition = nil
 
     local prompt, part, tree = findClosestDoor(root, lastDoorPrompt)
-
     if not prompt then
         prompt, part, tree = findClosestDoor(root, nil)
     end
 
     if prompt and part and tree then
+        noDoorSince = tick()
         setStatus("Visiting next door...")
 
-        local targetCFrame = getDoorPosition(
-            tree,
-            part,
-            root,
-            humanoid
-        )
+        local success = knockDoor(prompt, part, tree, character, root, humanoid)
 
-        root.CFrame = targetCFrame
-        root.AssemblyLinearVelocity = Vector3.zero
-
-        task.wait(0.2)
-
-        if humanoid.Health > 0
-            and not isBusy(character)
-            and prompt.Parent
-            and prompt.Enabled then
-
-            local success = pcall(function()
-                fireproximityprompt(prompt)
-            end)
-
-            if success then
-                lastDoorPrompt = prompt
-                doorCooldownUntil = os.clock() + DOOR_WAIT_TIME
-
-                setStatus("Door knocked! Waiting 3 seconds...")
-            else
-                setStatus("Door interaction failed...")
-            end
+        if success then
+            lastDoorPrompt = prompt
+            doorCooldownUntil = os.clock() + DOOR_WAIT_TIME
+            setStatus("Door knocked! Waiting 3 seconds...")
+        else
+            badPrompts[prompt] = true
+            setStatus("Door failed - skipping...")
+            task.wait(0.4)
         end
     else
-        setStatus("No candy - No doors found")
+        local idle = tick() - noDoorSince
+        if idle >= NO_DOOR_HOP_TIME then
+            setStatus("No door " .. math.floor(idle) .. "s - hopping...")
+            hopServer()
+            return
+        end
+        setStatus("No candy - No doors (" .. string.format("%.1f", idle) .. "/3s)")
+        task.wait(0.5)
     end
 end
