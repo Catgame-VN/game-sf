@@ -1,226 +1,323 @@
---[[
-v2.4: anti-lag + auto hop 15m + auto re-exec
-fix: đứng DƯỚI gốc cây, offset âm Y sâu
-     + stuck detector + CanCollide bypass
-]]
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
+
+-- AUTO RE-EXEC SAU HOP
 if queue_on_teleport then
     queue_on_teleport([[
         loadstring(game:HttpGet("https://raw.githubusercontent.com/Catgame-VN/game-sf/refs/heads/main/tsb%20autofarm"))()
     ]])
 end
 
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local TeleportService = game:GetService("TeleportService")
-local HttpService = game:GetService("HttpService")
-
 local player = Players.LocalPlayer
 local folder = workspace:WaitForChild("HalloweenCandy")
 local trees = workspace:WaitForChild("HalloweenDoorTrees")
 local camera = workspace.CurrentCamera
 
+-- SETTINGS
+local LOOP_DELAY = 0.15
+local DOOR_WAIT_TIME = 3
+local CANDY_HEIGHT = 4
+local TREE_STAND_DISTANCE = 5
 local HOP_INTERVAL = 15 * 60
-local CANDY_REFRESH = 0.15
-local DOOR_REFRESH = 0.5
 
--- đứng DƯỚI gốc cây: âm Y sâu
-local UNDER_OFFSET = Vector3.new(0, -6, 0)
--- nếu door part nằm sát ground, ép xuống thêm
-local UNDER_MIN_Y = -4
--- stuck check
-local STUCK_TIME = 3
-local STUCK_MOVE_MIN = 1.5
-
+-- STATUS
 local status = Drawing.new("Text")
-status.Text = "Status: Booting..."
+status.Text = "Discord: discord.gg/aBq4NTkMyP\nStatus: Finding candy..."
 status.Size = 18
 status.Center = true
 status.Outline = true
 status.Color = Color3.fromRGB(255, 255, 255)
-status.Position = Vector2.new(camera.ViewportSize.X / 2, 35)
 status.Visible = true
 
-local function setStatus(msg) status.Text = "Status: " .. msg end
-local function cleanup() if status then status:Remove() end end
+RunService.RenderStepped:Connect(function()
+    camera = workspace.CurrentCamera
 
+    if camera then
+        status.Position = Vector2.new(
+            camera.ViewportSize.X / 2,
+            35
+        )
+    end
+end)
+
+local function setStatus(message)
+    status.Text = "Discord: discord.gg/aBq4NTkMyP\nStatus: " .. message
+end
+
+-- HOP SERVER
 local function hopServer()
     setStatus("Hopping server...")
-    cleanup()
+
     local ok, servers = pcall(function()
         return HttpService:JSONDecode(
-            game:HttpGet("https://games.roblox.com/v1/games/" ..
-            game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100")
+            game:HttpGet(
+                "https://games.roblox.com/v1/games/"
+                .. game.PlaceId
+                .. "/servers/Public?sortOrder=Asc&limit=100"
+            )
         )
     end)
+
     if ok and servers and servers.data then
         for _, s in ipairs(servers.data) do
             if s.playing < s.maxPlayers and s.id ~= game.JobId then
                 pcall(function()
-                    TeleportService:TeleportToPlaceInstance(game.PlaceId, s.id, player)
+                    TeleportService:TeleportToPlaceInstance(
+                        game.PlaceId, s.id, player
+                    )
                 end)
                 return
             end
         end
     end
-    pcall(function() TeleportService:Teleport(game.PlaceId, player) end)
+
+    pcall(function()
+        TeleportService:Teleport(game.PlaceId, player)
+    end)
 end
 
 local hopStart = tick()
-local lastCandyScan = 0
-local lastDoorScan = 0
-local cachedCandy, cachedDoor, cachedDoorPart = nil, nil, nil
-local promptCooldown = 0
-local lastPos = Vector3.zero
-local lastMoveCheck = 0
-local stuckCount = 0
 
-local function isBusy(char)
-    return char:FindFirstChild("RootAnchor") or char:FindFirstChild("NoRotate")
+-- STATE
+local doorCooldownUntil = 0
+local lastDoorPrompt = nil
+local lastCandyPosition = nil
+
+local function isBusy(character)
+    return character:FindFirstChild("RootAnchor") ~= nil
+        or character:FindFirstChild("NoRotate") ~= nil
 end
 
-local function safeTeleport(root, pos, hum)
-    local prevCollide = root.CanCollide
-    pcall(function() root.CanCollide = false end)
-    local ok = pcall(function()
-        root.CFrame = CFrame.new(pos) * CFrame.Angles(0, math.rad(root.Orientation.Y), 0)
-    end)
-    if not ok then
-        pcall(function() root.CFrame = CFrame.new(pos) end)
+-- GET CANDY POSITION
+local function getCandyPosition(candy)
+    local rest = candy:GetAttribute("Rest")
+
+    if typeof(rest) == "CFrame" then
+        return rest.Position
+    elseif typeof(rest) == "Vector3" then
+        return rest
     end
-    if hum then
-        hum.Jump = true
-        pcall(function() hum:ChangeState(Enum.HumanoidStateType.Jumping) end)
-    end
-    task.wait(0.15)
-    pcall(function() root.CanCollide = prevCollide end)
+
+    return nil
 end
 
--- tìm vị trí DƯỚI gốc cây: lấy X,Z của door part, ép Y xuống
-local function underTreePos(doorPart)
-    local p = doorPart.Position + UNDER_OFFSET
-    -- nếu door part cao, ép Y âm thêm để chui sâu
-    if doorPart.Position.Y > 5 then
-        p = Vector3.new(doorPart.Position.X, doorPart.Position.Y - 8, doorPart.Position.Z)
-    end
-    -- safety: không xuống quá sâu dưới ground
-    if p.Y < UNDER_MIN_Y then
-        p = Vector3.new(p.X, UNDER_MIN_Y, p.Z)
-    end
-    return p
-end
+-- FIND CLOSEST CANDY
+local function findClosestCandy(root)
+    local closestPosition = nil
+    local closestDistance = math.huge
 
-local function scanCandy(root)
-    local best, bestDist = nil, math.huge
-    local children = folder:GetChildren()
-    for i = 1, #children do
-        local rest = children[i]:GetAttribute("Rest")
-        if rest then
-            local d = (root.Position - rest.Position).Magnitude
-            if d < bestDist then bestDist, best = d, rest end
+    for _, candy in ipairs(folder:GetChildren()) do
+        local position = getCandyPosition(candy)
+
+        if position then
+            local distance = (root.Position - position).Magnitude
+
+            if distance < closestDistance then
+                closestDistance = distance
+                closestPosition = position
+            end
         end
     end
-    return best
+
+    return closestPosition
 end
 
-local function scanDoor(root)
-    local bestPrompt, bestPart, bestDist = nil, nil, math.huge
-    local kids = trees:GetChildren()
-    for i = 1, #kids do
-        local tree = kids[i]
+-- FIND CLOSEST DOOR
+local function findClosestDoor(root, ignoredPrompt)
+    local closestPrompt = nil
+    local closestPart = nil
+    local closestTree = nil
+    local closestDistance = math.huge
+
+    for _, tree in ipairs(trees:GetChildren()) do
         local door = tree:FindFirstChild("DOOR 1 NEW")
         local frame = door and door:FindFirstChild("Frame")
         local prompt = frame and frame:FindFirstChild("TrickOrTreat")
-        if prompt and prompt:IsA("ProximityPrompt") then
-            local part = prompt.Parent
+
+        if prompt
+            and prompt:IsA("ProximityPrompt")
+            and prompt.Enabled
+            and prompt ~= ignoredPrompt then
+
+            local parent = prompt.Parent
+            local part = parent
+
+            if parent and parent:IsA("Attachment") then
+                part = parent.Parent
+            end
+
             if part and part:IsA("BasePart") then
-                local d = (root.Position - part.Position).Magnitude
-                if d < bestDist then
-                    bestDist, bestPrompt, bestPart = d, prompt, part
+                local distance = (root.Position - part.Position).Magnitude
+
+                if distance < closestDistance then
+                    closestDistance = distance
+                    closestPrompt = prompt
+                    closestPart = part
+                    closestTree = tree
                 end
             end
         end
     end
-    return bestPrompt, bestPart
+
+    return closestPrompt, closestPart, closestTree
 end
 
-RunService.RenderStepped:Connect(function()
-    local c = workspace.CurrentCamera
-    if c then status.Position = Vector2.new(c.ViewportSize.X / 2, 35) end
-end)
+-- GET POSITION UNDER TREE
+local function getDoorPosition(tree, part, root, humanoid)
+    local boxCFrame
+    local boxSize
 
-local alive = true
-task.spawn(function()
-    while alive do
-        local now = tick()
-        if now - hopStart >= HOP_INTERVAL then
-            hopServer(); return
+    if tree:IsA("Model") then
+        boxCFrame, boxSize = tree:GetBoundingBox()
+    elseif tree:IsA("BasePart") then
+        boxCFrame = tree.CFrame
+        boxSize = tree.Size
+    else
+        return part.Position + Vector3.new(0, 3, 0)
+    end
+
+    local center = boxCFrame.Position
+
+    local direction = Vector3.new(
+        part.Position.X - center.X,
+        0,
+        part.Position.Z - center.Z
+    )
+
+    if direction.Magnitude < 0.1 then
+        direction = Vector3.new(0, 0, 1)
+    end
+
+    direction = direction.Unit
+
+    local doorDistance = Vector3.new(
+        part.Position.X - center.X,
+        0,
+        part.Position.Z - center.Z
+    ).Magnitude
+
+    local standDistance = math.max(
+        TREE_STAND_DISTANCE,
+        doorDistance + 2
+    )
+
+    local position = center + direction * standDistance
+
+    local groundY = boxCFrame.Position.Y - boxSize.Y / 2
+
+    local height = humanoid.HipHeight + root.Size.Y / 2
+
+    position = Vector3.new(
+        position.X,
+        groundY + height + 0.25,
+        position.Z
+    )
+
+    return CFrame.lookAt(
+        position,
+        Vector3.new(part.Position.X, position.Y, part.Position.Z)
+    )
+end
+
+-- MAIN LOOP
+while task.wait(LOOP_DELAY) do
+    if tick() - hopStart >= HOP_INTERVAL then
+        hopServer()
+        return
+    end
+
+    local character = player.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+
+    if not root or not humanoid then
+        setStatus("Waiting for character...")
+        continue
+    end
+
+    if humanoid.Health <= 0 then
+        setStatus("Character dead...")
+        lastCandyPosition = nil
+        continue
+    end
+
+    if isBusy(character) then
+        setStatus("Knocking on door...")
+        continue
+    end
+
+    if os.clock() < doorCooldownUntil then
+        local remaining = math.ceil(doorCooldownUntil - os.clock())
+
+        setStatus("Waiting after knocking... " .. remaining .. "s")
+        continue
+    end
+
+    local closestCandy = findClosestCandy(root)
+
+    if closestCandy then
+        setStatus("Collecting candy...")
+
+        local sameCandy = lastCandyPosition
+            and (lastCandyPosition - closestCandy).Magnitude < 1
+
+        if not sameCandy or (root.Position - closestCandy).Magnitude > 8 then
+            root.CFrame = CFrame.new(
+                closestCandy + Vector3.new(0, CANDY_HEIGHT, 0)
+            )
+
+            root.AssemblyLinearVelocity = Vector3.zero
+
+            lastCandyPosition = closestCandy
         end
 
-        local char = player.Character
-        local root = char and char:FindFirstChild("HumanoidRootPart")
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        continue
+    end
 
-        if not root or not hum then
-            setStatus("Waiting for character...")
-        elseif hum.Health <= 0 then
-            setStatus("Character dead...")
-        elseif isBusy(char) then
-            setStatus("Door...")
-        else
-            if now - lastMoveCheck > 1 then
-                local moved = (root.Position - lastPos).Magnitude
-                if moved < STUCK_MOVE_MIN then stuckCount = stuckCount + 1
-                else stuckCount = 0 end
-                lastPos = root.Position
-                lastMoveCheck = now
-                if stuckCount >= STUCK_TIME then
-                    setStatus("Stuck - escaping...")
-                    safeTeleport(root, root.Position + Vector3.new(0, 25, 0), hum)
-                    task.wait(0.3)
-                    stuckCount = 0
-                end
-            end
+    lastCandyPosition = nil
 
-            if now - lastCandyScan > CANDY_REFRESH then
-                lastCandyScan = now
-                cachedCandy = scanCandy(root)
-            end
+    local prompt, part, tree = findClosestDoor(root, lastDoorPrompt)
 
-            if cachedCandy then
-                setStatus("Collecting candy...")
-                safeTeleport(root, cachedCandy.Position + Vector3.new(0, 4, 0), hum)
+    if not prompt then
+        prompt, part, tree = findClosestDoor(root, nil)
+    end
+
+    if prompt and part and tree then
+        setStatus("Visiting next door...")
+
+        local targetCFrame = getDoorPosition(
+            tree,
+            part,
+            root,
+            humanoid
+        )
+
+        root.CFrame = targetCFrame
+        root.AssemblyLinearVelocity = Vector3.zero
+
+        task.wait(0.2)
+
+        if humanoid.Health > 0
+            and not isBusy(character)
+            and prompt.Parent
+            and prompt.Enabled then
+
+            local success = pcall(function()
+                fireproximityprompt(prompt)
+            end)
+
+            if success then
+                lastDoorPrompt = prompt
+                doorCooldownUntil = os.clock() + DOOR_WAIT_TIME
+
+                setStatus("Door knocked! Waiting 3 seconds...")
             else
-                if now - lastDoorScan > DOOR_REFRESH then
-                    lastDoorScan = now
-                    cachedDoor, cachedDoorPart = scanDoor(root)
-                end
-
-                if cachedDoor and cachedDoorPart then
-                    if now >= promptCooldown then
-                        setStatus("Going under tree...")
-                        -- chui xuống DƯỚI gốc cây
-                        local up = underTreePos(cachedDoorPart)
-                        safeTeleport(root, up, hum)
-                        task.wait(0.25)
-                        pcall(function() fireproximityprompt(cachedDoor) end)
-                        promptCooldown = now + 0.8
-                    else
-                        setStatus("Cooldown...")
-                    end
-                else
-                    setStatus("No candy - hopping early...")
-                    hopServer(); return
-                end
+                setStatus("Door interaction failed...")
             end
         end
-
-        task.wait(0.1)
+    else
+        setStatus("No candy - No doors found")
     end
-end)
-
-Players.LocalPlayer.OnTeleport:Connect(function(state)
-    if state == Enum.TeleportState.Started then
-        alive = false
-        cleanup()
-    end
-end)
+end
