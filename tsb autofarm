@@ -17,14 +17,13 @@ local HOP_INTERVAL = 15 * 60
 
 -- DOOR FIRE SETTINGS
 local DOOR_POST_TP_WAIT = 0.45
-local DOOR_FIRE_RETRIES = 4
-local DOOR_FIRE_GAP = 0.25
-local DOOR_BUSY_WAIT = 1.2
+local DOOR_FIRE_RETRIES = 5
+local DOOR_FIRE_GAP = 0.2
+local DOOR_BUSY_WAIT = 1.5
 
 -- NO-DOOR HOP
 local NO_DOOR_HOP_TIME = 3
 
--- URL DÙNG CHO RE-EXEC — thay bằng raw link của chính script này
 local SCRIPT_URL = "https://raw.githubusercontent.com/Catgame-VN/game-sf/refs/heads/main/tsb%20autofarm"
 
 -- STATUS
@@ -47,17 +46,14 @@ local function setStatus(message)
     status.Text = "Discord: discord.gg/aBq4NTkMyP\nStatus: " .. message
 end
 
--- HOP SERVER — chỉ khi hàm này gọi thì mới set queue_on_teleport
+-- HOP SERVER
 local function hopServer()
     setStatus("Hopping server...")
-
-    -- đánh dấu CHỈ khi hop do script
     if queue_on_teleport then
         queue_on_teleport([[
             loadstring(game:HttpGet("]] .. SCRIPT_URL .. [["))()
         ]])
     end
-
     local ok, servers = pcall(function()
         return HttpService:JSONDecode(
             game:HttpGet(
@@ -84,6 +80,7 @@ end
 
 local hopStart = tick()
 local noDoorSince = tick()
+local candyHoldUntil = 0
 
 -- STATE
 local doorCooldownUntil = 0
@@ -96,7 +93,6 @@ local function isBusy(character)
         or character:FindFirstChild("NoRotate") ~= nil
 end
 
--- GET CANDY POSITION
 local function getCandyPosition(candy)
     local rest = candy:GetAttribute("Rest")
     if typeof(rest) == "CFrame" then
@@ -107,7 +103,6 @@ local function getCandyPosition(candy)
     return nil
 end
 
--- FIND CLOSEST CANDY
 local function findClosestCandy(root)
     local closestPosition = nil
     local closestDistance = math.huge
@@ -124,7 +119,7 @@ local function findClosestCandy(root)
     return closestPosition
 end
 
--- FIND CLOSEST DOOR
+-- FIND CLOSEST DOOR — BỎ check prompt.Enabled
 local function findClosestDoor(root, ignoredPrompt)
     local closestPrompt = nil
     local closestPart = nil
@@ -138,7 +133,6 @@ local function findClosestDoor(root, ignoredPrompt)
 
         if prompt
             and prompt:IsA("ProximityPrompt")
-            and prompt.Enabled
             and prompt ~= ignoredPrompt
             and not badPrompts[prompt] then
 
@@ -162,7 +156,6 @@ local function findClosestDoor(root, ignoredPrompt)
     return closestPrompt, closestPart, closestTree
 end
 
--- GET POSITION UNDER TREE
 local function getDoorPosition(tree, part, root, humanoid)
     local boxCFrame
     local boxSize
@@ -209,7 +202,7 @@ local function getDoorPosition(tree, part, root, humanoid)
     )
 end
 
--- FIRE DOOR
+-- KNOCK DOOR — fire mù, không cần prompt visible
 local function knockDoor(prompt, part, tree, character, root, humanoid)
     local targetCFrame = getDoorPosition(tree, part, root, humanoid)
     root.CFrame = targetCFrame
@@ -220,7 +213,7 @@ local function knockDoor(prompt, part, tree, character, root, humanoid)
     local fired = false
     for attempt = 1, DOOR_FIRE_RETRIES do
         if humanoid.Health <= 0 then return false end
-        if not prompt.Parent or not prompt.Enabled then
+        if not prompt.Parent then
             fired = true
             break
         end
@@ -229,26 +222,26 @@ local function knockDoor(prompt, part, tree, character, root, humanoid)
             break
         end
 
-        local ok = pcall(function()
+        -- fire mù, bất chấp Enabled / visible
+        pcall(function()
             fireproximityprompt(prompt)
         end)
 
-        if ok then
-            local waited = 0
-            while waited < DOOR_BUSY_WAIT do
-                task.wait(DOOR_FIRE_GAP)
-                waited = waited + DOOR_FIRE_GAP
-                if isBusy(character) then
-                    fired = true
-                    break
-                end
-                if not prompt.Parent or not prompt.Enabled then
-                    fired = true
-                    break
-                end
+        -- đợi busy bật (animation cửa)
+        local waited = 0
+        while waited < DOOR_BUSY_WAIT do
+            task.wait(DOOR_FIRE_GAP)
+            waited = waited + DOOR_FIRE_GAP
+            if isBusy(character) then
+                fired = true
+                break
             end
-            if fired then break end
+            if not prompt.Parent then
+                fired = true
+                break
+            end
         end
+        if fired then break end
     end
 
     return fired
@@ -291,6 +284,13 @@ while task.wait(LOOP_DELAY) do
         continue
     end
 
+    -- CANDY LOCK: đang trong quá trình gõ cửa thì không teleport tới candy
+    if tick() < candyHoldUntil then
+        setStatus("Door in progress - holding...")
+        noDoorSince = tick()
+        continue
+    end
+
     local closestCandy = findClosestCandy(root)
 
     if closestCandy then
@@ -317,6 +317,9 @@ while task.wait(LOOP_DELAY) do
         noDoorSince = tick()
         setStatus("Visiting next door...")
 
+        -- khoá candy trong suốt quá trình gõ + 3s sau
+        candyHoldUntil = tick() + DOOR_WAIT_TIME + DOOR_BUSY_WAIT + 1
+
         local success = knockDoor(prompt, part, tree, character, root, humanoid)
 
         if success then
@@ -326,7 +329,6 @@ while task.wait(LOOP_DELAY) do
         else
             badPrompts[prompt] = true
             setStatus("Door failed - skipping...")
-            task.wait(0.4)
         end
     else
         local idle = tick() - noDoorSince
