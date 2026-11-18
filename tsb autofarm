@@ -1,5 +1,6 @@
 --[[
-v2.1: anti-lag + auto hop 15m + auto re-exec
+v2.2: anti-lag + auto hop 15m + auto re-exec
+fix: teleport xuống dưới cây, tránh kẹt part / lỗi CFrame
 ]]
 if queue_on_teleport then
     queue_on_teleport([[
@@ -20,6 +21,11 @@ local camera = workspace.CurrentCamera
 local HOP_INTERVAL = 15 * 60
 local CANDY_REFRESH = 0.15
 local DOOR_REFRESH = 0.5
+
+-- offset trốn dưới cây: lùi xuống 3 stud, hơi ra sau 1 stud
+local DOOR_OFFSET = Vector3.new(0, -3, 0)
+-- sau khi fire prompt thì né ra xa cây để không kẹt
+local HIDE_OFFSET = Vector3.new(0, -2, 4)
 
 local status = Drawing.new("Text")
 status.Text = "Status: Booting..."
@@ -68,9 +74,26 @@ local lastDoorScan = 0
 local cachedCandy = nil
 local cachedDoor = nil
 local cachedDoorPart = nil
+local promptCooldown = 0
 
 local function isBusy(char)
     return char:FindFirstChild("RootAnchor") or char:FindFirstChild("NoRotate")
+end
+
+-- teleport an toàn: set CFrame, nếu lỗi thì pcall bắt, không crash loop
+local function safeTeleport(root, pos, hum)
+    local ok = pcall(function()
+        root.CFrame = CFrame.new(pos) * CFrame.Angles(0, math.rad(root.Orientation.Y), 0)
+    end)
+    if not ok then
+        pcall(function()
+            root.CFrame = CFrame.new(pos)
+        end)
+    end
+    if hum then
+        hum.Jump = true
+        hum:ChangeState(Enum.HumanoidStateType.Jumping)
+    end
 end
 
 local function scanCandy(root)
@@ -142,20 +165,30 @@ task.spawn(function()
 
             if cachedCandy then
                 setStatus("Collecting candy...")
-                root.CFrame = CFrame.new(cachedCandy.Position + Vector3.new(0, 4, 0))
-                hum.Jump = true
-                hum:ChangeState(Enum.HumanoidStateType.Jumping)
+                -- teleport lên trên candy 4 stud, dùng safeTeleport tránh kẹt
+                safeTeleport(root, cachedCandy.Position + Vector3.new(0, 4, 0), hum)
             else
                 if now - lastDoorScan > DOOR_REFRESH then
                     lastDoorScan = now
                     cachedDoor, cachedDoorPart = scanDoor(root)
                 end
+
                 if cachedDoor and cachedDoorPart then
-                    setStatus("Visiting closest door...")
-                    hum.Jump = true
-                    hum:ChangeState(Enum.HumanoidStateType.Jumping)
-                    root.CFrame = cachedDoorPart.CFrame
-                    fireproximityprompt(cachedDoor)
+                    if now >= promptCooldown then
+                        setStatus("Visiting closest door...")
+                        -- trốn xuống DƯỚI cây: offset âm Y, tránh kẹt part
+                        local doorPos = cachedDoorPart.Position + DOOR_OFFSET
+                        safeTeleport(root, doorPos, hum)
+                        -- chờ 1 nhịp cho humanoid ổn định rồi mới fire
+                        task.wait(0.25)
+                        pcall(function() fireproximityprompt(cachedDoor) end)
+                        -- né ra khỏi cây sau khi fire, tránh kẹt lần sau
+                        local hidePos = cachedDoorPart.Position + HIDE_OFFSET
+                        safeTeleport(root, hidePos, hum)
+                        promptCooldown = now + 1
+                    else
+                        setStatus("Cooldown...")
+                    end
                 else
                     setStatus("No candy - hopping early...")
                     hopServer()
