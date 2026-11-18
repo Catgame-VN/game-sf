@@ -1,633 +1,176 @@
--- TSB Genos Smart Farm v4.1 — M1 Auto + No-Fly Anchor + Mobile
--- Thêm: M1 spam liên tục, giữ target không bay lên khi bị đánh
+--[[
+v2.1: anti-lag + auto hop 15m + auto re-exec
+]]
+if queue_on_teleport then
+    queue_on_teleport([[
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/your/scripts/main/candy.lua"))()
+    ]])
+end
 
-if not game:IsLoaded() then game.Loaded:Wait() end
-
-local Players    = game:GetService("Players")
+local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local StarterGui = game:GetService("StarterGui")
-local Lighting   = game:GetService("Lighting")
-local LP         = Players.LocalPlayer
+local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
 
--- =====================================================
--- NUCLEAR LAG REDUCE
--- =====================================================
-local function applyLagReduce()
-    pcall(function() settings().Rendering.QualityLevel = 1 end)
-    Lighting.GlobalShadows = false
-    Lighting.FogEnd        = 9e9
-    Lighting.FogStart      = 9e9
-    for _, v in ipairs(Lighting:GetChildren()) do
-        pcall(function()
-            if v:IsA("BlurEffect") or v:IsA("SunRaysEffect")
-            or v:IsA("ColorCorrectionEffect") or v:IsA("BloomEffect")
-            or v:IsA("DepthOfFieldEffect") then v.Enabled = false end
-        end)
-    end
-    workspace.DescendantAdded:Connect(function(v)
-        pcall(function()
-            local char = LP.Character
-            if char and v:IsDescendantOf(char) then return end
-            if v:IsA("ParticleEmitter") then v.Rate=0; v.Enabled=false
-            elseif v:IsA("Beam") or v:IsA("Trail") or v:IsA("Fire")
-                or v:IsA("Smoke") or v:IsA("Sparkles") then v.Enabled=false
-            elseif v:IsA("Decal") or v:IsA("Texture") then v.Transparency=1
-            elseif v:IsA("PointLight") or v:IsA("SpotLight")
-                or v:IsA("SurfaceLight") then v.Enabled=false
-            elseif v:IsA("BasePart") then v.CastShadow=false end
-        end)
+local player = Players.LocalPlayer
+local folder = workspace:WaitForChild("HalloweenCandy")
+local trees = workspace:WaitForChild("HalloweenDoorTrees")
+local camera = workspace.CurrentCamera
+
+local HOP_INTERVAL = 15 * 60
+local CANDY_REFRESH = 0.15
+local DOOR_REFRESH = 0.5
+
+local status = Drawing.new("Text")
+status.Text = "Status: Booting..."
+status.Size = 18
+status.Center = true
+status.Outline = true
+status.Color = Color3.fromRGB(255, 255, 255)
+status.Position = Vector2.new(camera.ViewportSize.X / 2, 35)
+status.Visible = true
+
+local function setStatus(msg)
+    status.Text = "Status: " .. msg
+end
+
+local function cleanup()
+    if status then status:Remove() end
+end
+
+local function hopServer()
+    setStatus("Hopping server...")
+    cleanup()
+    local ok, servers = pcall(function()
+        return HttpService:JSONDecode(
+            game:HttpGet("https://games.roblox.com/v1/games/" ..
+            game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100")
+        )
     end)
-    task.spawn(function()
-        for _, v in ipairs(workspace:GetDescendants()) do
-            pcall(function()
-                if v:IsA("ParticleEmitter") then v.Rate=0; v.Enabled=false
-                elseif v:IsA("Beam") or v:IsA("Trail") or v:IsA("Fire")
-                    or v:IsA("Smoke") or v:IsA("Sparkles") then v.Enabled=false
-                elseif v:IsA("Decal") or v:IsA("Texture") then v.Transparency=1
-                elseif v:IsA("PointLight") or v:IsA("SpotLight")
-                    or v:IsA("SurfaceLight") then v.Enabled=false
-                elseif v:IsA("BasePart") then v.CastShadow=false end
-            end)
-        end
-    end)
-    LP.CharacterAdded:Connect(function()
-        task.wait(0.5)
-        task.spawn(function()
-            for _, v in ipairs(workspace:GetDescendants()) do
+    if ok and servers and servers.data then
+        for _, s in ipairs(servers.data) do
+            if s.playing < s.maxPlayers and s.id ~= game.JobId then
                 pcall(function()
-                    if v:IsA("ParticleEmitter") then v.Rate=0; v.Enabled=false
-                    elseif v:IsA("Beam") or v:IsA("Trail") then v.Enabled=false
-                    elseif v:IsA("Decal") or v:IsA("Texture") then v.Transparency=1
-                    elseif v:IsA("BasePart") then v.CastShadow=false end
+                    TeleportService:TeleportToPlaceInstance(game.PlaceId, s.id, player)
                 end)
-            end
-        end)
-    end)
-    print("[LagReduce] nuclear applied")
-end
-applyLagReduce()
-
--- =====================================================
--- SCAN REMOTES
--- =====================================================
-local RS = game:GetService("ReplicatedStorage")
-local allRemotes = {}
-
-local function findRemotes()
-    local function scan(parent, depth)
-        if depth > 8 then return end
-        local ok, children = pcall(function() return parent:GetChildren() end)
-        if not ok then return end
-        for _, v in ipairs(children) do
-            if v:IsA("RemoteEvent") or v:IsA("RemoteFunction") then
-                allRemotes[v.Name] = v
-                -- Lưu cả path đầy đủ để debug
-                print("[REMOTE]", v:GetFullName())
-            end
-            if not v:IsA("BaseScript") then
-                scan(v, depth + 1)
-            end
-        end
-    end
-    scan(RS, 0)
-    scan(game:GetService("Players"), 0)
-    -- Scan thêm workspace (một số game để remote ở đây)
-    scan(workspace, 0)
-end
-findRemotes()
-
-local function getRemote(name)
-    return allRemotes[name]
-end
-
--- =====================================================
--- CONFIG
--- =====================================================
-local CFG = {
-    AutoFarm        = true,
-    UseUlt          = true,
-    HitAndFade      = true,
-    AutoM1          = true,    -- spam M1 liên tục khi gần target
-    NoFlyAnchor     = true,    -- giữ target không bay khi bị đánh
-    RetreatHP       = 45,
-    FinisherHP      = 30,
-    FarmRange       = 50,
-    RetreatRange    = 80,
-    M1Interval      = 0.08,    -- tốc độ spam M1 (giây)
-    AttackDelay     = 0.45,
-    AntiAFK         = true,
-    AvoidUltUsers   = true,
-}
-
--- =====================================================
--- STATE
--- =====================================================
-local farming       = CFG.AutoFarm
-local retreating    = false
-local comboCooldown = false
-local lastAttack    = 0
-local lastUlt       = 0
-local ultReady      = false
-local ULT_CD        = 55
-
--- Track các target đang bị anchor (no-fly)
-local anchoredTargets = {}
-
--- =====================================================
--- HELPERS
--- =====================================================
-local function getChar() return LP.Character end
-local function getHRP(c) return c and c:FindFirstChild("HumanoidRootPart") end
-local function getHum(c) return c and c:FindFirstChildWhichIsA("Humanoid") end
-
-local function getHPPct(char)
-    local hum = getHum(char)
-    if not hum or hum.MaxHealth == 0 then return 100 end
-    return (hum.Health / hum.MaxHealth) * 100
-end
-
-local function isAlive(char)
-    local hum = getHum(char)
-    return hum and hum.Health > 0
-end
-
-local function hasUltActive(char)
-    if not char then return false end
-    if char:GetAttribute("UltimateActive") then return true end
-    for _, v in ipairs(char:GetChildren()) do
-        local n = v.Name:lower()
-        if n:find("ult") or n:find("aura") or n:find("awakened") then return true end
-    end
-    return false
-end
-
-local function setNameplate(visible)
-    pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, visible) end)
-    local char = getChar()
-    if char then
-        for _, v in ipairs(char:GetDescendants()) do
-            if v:IsA("BillboardGui") then
-                pcall(function() v.Enabled = visible end)
-            end
-        end
-    end
-end
-
-local function teleportToTarget(targetHRP)
-    local myHRP = getHRP(getChar())
-    if not myHRP or not targetHRP then return end
-    local angle  = math.random() * math.pi * 2
-    local radius = math.random(2, 4)
-    local offset = Vector3.new(math.cos(angle) * radius, 0, math.sin(angle) * radius)
-    myHRP.CFrame = CFrame.new(targetHRP.Position + offset, targetHRP.Position)
-end
-
-local function doRetreat()
-    local myHRP = getHRP(getChar())
-    if not myHRP then return end
-    retreating = true
-    setNameplate(false)
-    local dirs = {
-        Vector3.new(1,0,0), Vector3.new(-1,0,0),
-        Vector3.new(0,0,1), Vector3.new(0,0,-1),
-        Vector3.new(1,0,1).Unit, Vector3.new(-1,0,-1).Unit,
-    }
-    local dir = dirs[math.random(1, #dirs)]
-    myHRP.CFrame = CFrame.new(
-        myHRP.Position + dir * CFG.RetreatRange + Vector3.new(0, 5, 0)
-    )
-    task.wait(1.5)
-    retreating = false
-    setNameplate(true)
-end
-
-local function getTargets()
-    local list = {}
-    local myHRP = getHRP(getChar())
-    if not myHRP then return list end
-    for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= LP and plr.Character then
-            local tHRP = getHRP(plr.Character)
-            if tHRP and isAlive(plr.Character) then
-                local dist = (tHRP.Position - myHRP.Position).Magnitude
-                local skipUlt = CFG.AvoidUltUsers and hasUltActive(plr.Character)
-                if not skipUlt and dist <= CFG.FarmRange then
-                    table.insert(list, {
-                        plr  = plr,
-                        hrp  = tHRP,
-                        dist = dist,
-                        hp   = getHPPct(plr.Character),
-                        char = plr.Character,
-                    })
-                end
-            end
-        end
-    end
-    table.sort(list, function(a, b)
-        if (a.hp < CFG.FinisherHP) ~= (b.hp < CFG.FinisherHP) then
-            return a.hp < CFG.FinisherHP
-        end
-        return a.dist < b.dist
-    end)
-    return list
-end
-
--- =====================================================
--- NO-FLY ANCHOR
--- Giữ target dính đất — không bị văng lên trời khi bị đánh
--- Cách: liên tục set Velocity = 0 + Y position lock
--- =====================================================
-local function startAnchor(targetChar)
-    if not CFG.NoFlyAnchor then return end
-    if anchoredTargets[targetChar] then return end  -- đã anchor rồi
-
-    local tHRP = getHRP(targetChar)
-    if not tHRP then return end
-
-    local groundY = tHRP.Position.Y  -- Y ban đầu khi bắt đầu anchor
-    anchoredTargets[targetChar] = true
-
-    task.spawn(function()
-        local conn
-        conn = RunService.Heartbeat:Connect(function()
-            -- Dừng anchor nếu target chết hoặc out of range
-            if not anchoredTargets[targetChar]
-            or not isAlive(targetChar)
-            or not tHRP.Parent then
-                conn:Disconnect()
-                anchoredTargets[targetChar] = nil
                 return
             end
-
-            pcall(function()
-                -- Tắt gravity tạm thời bằng cách set AssemblyLinearVelocity Y = 0
-                -- nếu đang bị bay lên (Y velocity > 5)
-                local vel = tHRP.AssemblyLinearVelocity
-                if vel.Y > 5 then
-                    tHRP.AssemblyLinearVelocity = Vector3.new(vel.X, 0, vel.Z)
-                end
-
-                -- Nếu target bị ném quá cao so với ground → kéo về
-                if tHRP.Position.Y > groundY + 8 then
-                    tHRP.CFrame = CFrame.new(
-                        tHRP.Position.X,
-                        groundY + 1,
-                        tHRP.Position.Z
-                    )
-                end
-            end)
-        end)
-
-        -- Tự release sau 4 giây (1 combo cycle)
-        task.wait(4)
-        conn:Disconnect()
-        anchoredTargets[targetChar] = nil
-    end)
-end
-
-local function stopAnchor(targetChar)
-    anchoredTargets[targetChar] = nil
-end
-
--- =====================================================
--- M1 SPAM ENGINE
--- Dùng: hookmetamethod hoặc FireServer trực tiếp
--- TSB M1 thường là ClickDetector hoặc RemoteEvent "Attack"/"M1"/"Combat"
--- =====================================================
-local lastM1 = 0
-
-local function fireM1(targetChar)
-    if not CFG.AutoM1 then return end
-    local now = tick()
-    if (now - lastM1) < CFG.M1Interval then return end
-    lastM1 = now
-
-    local tHRP = getHRP(targetChar)
-    if not tHRP then return end
-
-    -- Method 1: FireServer các remote M1 phổ biến
-    local m1Names = {
-        "Attack", "M1", "Combat", "Punch",
-        "BasicAttack", "Hit", "DealDamage",
-        "CombatRemote", "AttackRemote",
-    }
-    for _, name in ipairs(m1Names) do
-        local r = getRemote(name)
-        if r then
-            pcall(function() r:FireServer(targetChar) end)
-            pcall(function() r:FireServer(tHRP) end)
-            pcall(function() r:FireServer(tHRP.Position) end)
         end
     end
-
-    -- Method 2: Simulate click trên target HRP (một số game dùng ClickDetector)
     pcall(function()
-        local cd = tHRP:FindFirstChildWhichIsA("ClickDetector")
-            or targetChar:FindFirstChildWhichIsA("ClickDetector")
-        if cd then
-            fireclickdetector(cd)
-        end
+        TeleportService:Teleport(game.PlaceId, player)
     end)
-
-    -- Method 3: Humanoid MoveTo để trigger hitbox range check server-side
-    local myHum = getHum(getChar())
-    if myHum then
-        pcall(function() myHum:MoveTo(tHRP.Position) end)
-    end
 end
 
--- =====================================================
--- SKILL FIRE
--- =====================================================
-local function trySkill(skillIndex, targetChar)
-    local skillRemotes = {
-        {"Skill", "UseSkill", "ActivateSkill", "Ability", "Skill1", "Q"},
-        {"Skill2", "UseSkill2", "E"},
-        {"Skill3", "UseSkill3", "R"},
-        {"Ultimate", "Ult", "UseUltimate", "ActivateUlt", "F", "UltRemote"},
-    }
-    local names = skillRemotes[math.clamp(skillIndex, 1, 4)]
-    for _, rname in ipairs(names) do
-        local r = getRemote(rname)
-        if r then
-            pcall(function() r:FireServer() end)
-            pcall(function() r:FireServer(targetChar) end)
-            if targetChar then
-                local tHRP = getHRP(targetChar)
-                if tHRP then
-                    pcall(function() r:FireServer(tHRP.Position) end)
+local hopStart = tick()
+local lastCandyScan = 0
+local lastDoorScan = 0
+local cachedCandy = nil
+local cachedDoor = nil
+local cachedDoorPart = nil
+
+local function isBusy(char)
+    return char:FindFirstChild("RootAnchor") or char:FindFirstChild("NoRotate")
+end
+
+local function scanCandy(root)
+    local best, bestDist = nil, math.huge
+    local children = folder:GetChildren()
+    for i = 1, #children do
+        local c = children[i]
+        local rest = c:GetAttribute("Rest")
+        if rest then
+            local d = (root.Position - rest.Position).Magnitude
+            if d < bestDist then
+                bestDist, best = d, rest
+            end
+        end
+    end
+    return best
+end
+
+local function scanDoor(root)
+    local bestPrompt, bestPart, bestDist = nil, nil, math.huge
+    local kids = trees:GetChildren()
+    for i = 1, #kids do
+        local tree = kids[i]
+        local door = tree:FindFirstChild("DOOR 1 NEW")
+        local frame = door and door:FindFirstChild("Frame")
+        local prompt = frame and frame:FindFirstChild("TrickOrTreat")
+        if prompt and prompt:IsA("ProximityPrompt") then
+            local part = prompt.Parent
+            if part and part:IsA("BasePart") then
+                local d = (root.Position - part.Position).Magnitude
+                if d < bestDist then
+                    bestDist, bestPrompt, bestPart = d, prompt, part
                 end
             end
         end
     end
+    return bestPrompt, bestPart
 end
 
--- ULT tracker
+RunService.RenderStepped:Connect(function()
+    local c = workspace.CurrentCamera
+    if c then status.Position = Vector2.new(c.ViewportSize.X / 2, 35) end
+end)
+
+local alive = true
 task.spawn(function()
-    while true do
-        task.wait(1)
-        if (tick() - lastUlt) >= ULT_CD then
-            ultReady = true
+    while alive do
+        local now = tick()
+        if now - hopStart >= HOP_INTERVAL then
+            hopServer()
+            return
         end
+
+        local char = player.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+
+        if not root or not hum then
+            setStatus("Waiting for character...")
+        elseif hum.Health <= 0 then
+            setStatus("Character dead...")
+        elseif isBusy(char) then
+            setStatus("Door...")
+        else
+            if now - lastCandyScan > CANDY_REFRESH then
+                lastCandyScan = now
+                cachedCandy = scanCandy(root)
+            end
+
+            if cachedCandy then
+                setStatus("Collecting candy...")
+                root.CFrame = CFrame.new(cachedCandy.Position + Vector3.new(0, 4, 0))
+                hum.Jump = true
+                hum:ChangeState(Enum.HumanoidStateType.Jumping)
+            else
+                if now - lastDoorScan > DOOR_REFRESH then
+                    lastDoorScan = now
+                    cachedDoor, cachedDoorPart = scanDoor(root)
+                end
+                if cachedDoor and cachedDoorPart then
+                    setStatus("Visiting closest door...")
+                    hum.Jump = true
+                    hum:ChangeState(Enum.HumanoidStateType.Jumping)
+                    root.CFrame = cachedDoorPart.CFrame
+                    fireproximityprompt(cachedDoor)
+                else
+                    setStatus("No candy - hopping early...")
+                    hopServer()
+                    return
+                end
+            end
+        end
+
+        task.wait(0.1)
     end
 end)
 
--- =====================================================
--- COMBO ENGINE
--- =====================================================
-local function doCombo(target)
-    if comboCooldown then return end
-    comboCooldown = true
-
-    local targetChar = target.char
-    local targetHRP  = target.hrp
-    local isFinisher = target.hp < CFG.FinisherHP
-
-    if CFG.HitAndFade then setNameplate(false) end
-
-    -- Teleport gần
-    teleportToTarget(targetHRP)
-    task.wait(0.05)
-
-    -- Face target
-    local myHRP = getHRP(getChar())
-    if myHRP then
-        myHRP.CFrame = CFrame.lookAt(myHRP.Position, targetHRP.Position)
-    end
-
-    -- Bắt đầu anchor target (không cho bay)
-    startAnchor(targetChar)
-
-    if isFinisher then
-        -- Finisher path: Q + M1 × 3 + ult nếu ready
-        trySkill(1, targetChar)
-        task.wait(0.15)
-        for _ = 1, 3 do
-            fireM1(targetChar)
-            task.wait(CFG.M1Interval * 2)
-        end
-        if CFG.UseUlt and ultReady then
-            trySkill(4, targetChar)
-            lastUlt  = tick()
-            ultReady = false
-        end
-    else
-        -- Full combo: Q → M1 × 4 → E → M1 × 2 → R → M1 × 2 → ult?
-        trySkill(1, targetChar)
-        task.wait(0.15)
-
-        for _ = 1, 4 do
-            fireM1(targetChar)
-            task.wait(CFG.M1Interval * 2)
-        end
-
-        trySkill(2, targetChar)
-        task.wait(0.15)
-
-        for _ = 1, 2 do
-            fireM1(targetChar)
-            task.wait(CFG.M1Interval * 2)
-        end
-
-        trySkill(3, targetChar)
-        task.wait(0.15)
-
-        for _ = 1, 2 do
-            fireM1(targetChar)
-            task.wait(CFG.M1Interval * 2)
-        end
-
-        if CFG.UseUlt and ultReady then
-            trySkill(4, targetChar)
-            lastUlt  = tick()
-            ultReady = false
-            task.wait(0.3)
-        end
-    end
-
-    -- Hit & fade
-    if CFG.HitAndFade then
-        local myHRP2 = getHRP(getChar())
-        if myHRP2 then
-            myHRP2.CFrame = CFrame.new(
-                myHRP2.Position + myHRP2.CFrame.LookVector * -10
-            )
-        end
-        task.wait(0.2)
-        setNameplate(true)
-    end
-
-    task.wait(0.35)
-    comboCooldown = false
-end
-
--- =====================================================
--- CONTINUOUS M1 LOOP (ngoài combo, khi đang gần target)
--- Spam M1 liên tục ngay cả khi không trong combo
--- =====================================================
-task.spawn(function()
-    while true do
-        task.wait(CFG.M1Interval)
-        if not farming or retreating or comboCooldown then continue end
-        local char = getChar()
-        if not char or not isAlive(char) then continue end
-        local targets = getTargets()
-        if #targets == 0 then continue end
-        local best = targets[1]
-        -- Chỉ M1 khi đã gần (< 8 studs)
-        if best.dist < 8 then
-            fireM1(best.char)
-            startAnchor(best.char)
-        end
+Players.LocalPlayer.OnTeleport:Connect(function(state)
+    if state == Enum.TeleportState.Started then
+        alive = false
+        cleanup()
     end
 end)
-
--- =====================================================
--- MAIN LOOP
--- =====================================================
-RunService.Heartbeat:Connect(function()
-    if not farming then return end
-    local char = getChar()
-    if not char or not isAlive(char) then return end
-
-    local hp = getHPPct(char)
-    if hp < CFG.RetreatHP and not retreating then
-        task.spawn(doRetreat)
-        return
-    end
-    if retreating or comboCooldown then return end
-
-    local now = tick()
-    if (now - lastAttack) < CFG.AttackDelay then return end
-    lastAttack = now
-
-    local targets = getTargets()
-    if #targets == 0 then return end
-
-    task.spawn(function() doCombo(targets[1]) end)
-end)
-
--- =====================================================
--- ANTI AFK
--- =====================================================
-if CFG.AntiAFK then
-    local vu = game:GetService("VirtualUser")
-    LP.Idled:Connect(function()
-        vu:Button2Down(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
-        task.wait(1)
-        vu:Button2Up(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
-    end)
-end
-
--- =====================================================
--- MOBILE GUI
--- =====================================================
-local sg = Instance.new("ScreenGui")
-sg.Name           = "GenosFarmV41"
-sg.ResetOnSpawn   = false
-sg.IgnoreGuiInset = true
-sg.Parent         = gethui and gethui() or LP.PlayerGui
-
-local frame = Instance.new("Frame")
-frame.Size             = UDim2.new(0, 255, 0, 60)
-frame.Position         = UDim2.new(0, 8, 0.25, 0)
-frame.BackgroundColor3 = Color3.fromRGB(10, 10, 16)
-frame.BorderSizePixel  = 0
-frame.Active           = true
-frame.Draggable        = true
-frame.Parent           = sg
-Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 10)
-
-local titleBar = Instance.new("Frame")
-titleBar.Size             = UDim2.new(1, 0, 0, 36)
-titleBar.BackgroundColor3 = Color3.fromRGB(180, 35, 35)
-titleBar.BorderSizePixel  = 0
-titleBar.Parent           = frame
-Instance.new("UICorner", titleBar).CornerRadius = UDim.new(0, 10)
-
-local titleLbl = Instance.new("TextLabel")
-titleLbl.Size                  = UDim2.new(1, 0, 1, 0)
-titleLbl.BackgroundTransparency = 1
-titleLbl.TextColor3            = Color3.new(1,1,1)
-titleLbl.Text                  = "⚡ GENOS FARM v4.1"
-titleLbl.Font                  = Enum.Font.GothamBold
-titleLbl.TextSize               = 14
-titleLbl.Parent                 = titleBar
-
-local function makeLabel(yOff, color)
-    local lbl = Instance.new("TextLabel")
-    lbl.Size                   = UDim2.new(1, -16, 0, 20)
-    lbl.Position               = UDim2.new(0, 8, 0, yOff)
-    lbl.BackgroundTransparency = 1
-    lbl.TextColor3             = color
-    lbl.Font                   = Enum.Font.Gotham
-    lbl.TextSize                = 11
-    lbl.TextXAlignment          = Enum.TextXAlignment.Left
-    lbl.Parent                  = frame
-    return lbl
-end
-
-local hpLbl     = makeLabel(38, Color3.fromRGB(100,255,100))
-local ultLbl    = makeLabel(56, Color3.fromRGB(255,200,50))
-local statLbl   = makeLabel(74, Color3.fromRGB(180,180,255))
-local m1Lbl     = makeLabel(92, Color3.fromRGB(150,220,255))
-
-hpLbl.Text   = "HP: --"
-ultLbl.Text  = "ULT: --"
-statLbl.Text = "Status: idle"
-m1Lbl.Text   = "M1: --"
-
-local btnY = 115
-local function addToggle(label, initState, cb)
-    local btn = Instance.new("TextButton")
-    btn.Size          = UDim2.new(1, -16, 0, 36)
-    btn.Position      = UDim2.new(0, 8, 0, btnY)
-    btn.BackgroundColor3 = initState and Color3.fromRGB(35,155,65) or Color3.fromRGB(85,20,20)
-    btn.TextColor3    = Color3.new(1,1,1)
-    btn.Text          = label .. ": " .. (initState and "ON" or "OFF")
-    btn.Font          = Enum.Font.GothamSemibold
-    btn.TextSize      = 12
-    btn.AutoButtonColor = false
-    btn.Parent        = frame
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 7)
-    btnY = btnY + 40
-    local state = initState
-    btn.MouseButton1Click:Connect(function()
-        state = not state
-        btn.BackgroundColor3 = state and Color3.fromRGB(35,155,65) or Color3.fromRGB(85,20,20)
-        btn.Text = label .. ": " .. (state and "ON" or "OFF")
-        cb(state)
-    end)
-end
-
-addToggle("Auto Farm",   farming,           function(v) farming = v end)
-addToggle("Auto M1",     CFG.AutoM1,        function(v) CFG.AutoM1 = v end)
-addToggle("No Fly",      CFG.NoFlyAnchor,   function(v) CFG.NoFlyAnchor = v end)
-addToggle("Use Ult",     CFG.UseUlt,        function(v) CFG.UseUlt = v end)
-addToggle("Finisher",    true,              function(v) CFG.FinisherHP = v and 30 or 0 end)
-addToggle("Avoid Ults",  CFG.AvoidUltUsers, function(v) CFG.AvoidUltUsers = v end)
-
-frame.Size = UDim2.new(0, 255, 0, btnY + 10)
-
-local m1Count = 0
-RunService.Heartbeat:Connect(function()
-    local char = getChar()
-    if char then
-        local hp = getHPPct(char)
-        hpLbl.Text       = ("HP: %.0f%%  %s"):format(hp, hp < CFG.RetreatHP and "⚠ FLEE" or "")
-        hpLbl.TextColor3 = hp < CFG.RetreatHP and Color3.fromRGB(255,70,70) or Color3.fromRGB(80,255,80)
-    end
-    local cd = ULT_CD - (tick() - lastUlt)
-    ultLbl.Text       = ultReady and "ULT: ✅ READY" or ("ULT: ⏳ %.0fs"):format(math.max(0,cd))
-    ultLbl.TextColor3 = ultReady and Color3.fromRGB(80,255,80) or Color3.fromRGB(255,200,50)
-    statLbl.Text = retreating and "⚠ Retreating..." or comboCooldown and "⚔ Combo..." or not farming and "⏸ Paused" or "✓ Scanning..."
-    m1Lbl.Text = ("M1 spam: %s  |  NoFly targets: %d"):format(
-        CFG.AutoM1 and "ON" or "OFF",
-        (function() local n=0; for _ in pairs(anchoredTargets) do n=n+1 end; return n end)()
-    )
-end)
-
-print("[Genos Farm v4.1] M1 auto + no-fly anchor loaded")
-for name, _ in pairs(allRemotes) do
-    print("[REMOTE FOUND]", name)
-end
