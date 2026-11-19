@@ -1,29 +1,416 @@
-local RS = game:GetService("ReplicatedStorage")
-local Players = game:GetService("Players")
-local LP = Players.LocalPlayer
-local found = {}
+--[[
+    TSB Genos Auto Farm v5.2
+    - Tự động tìm target gần nhất, không cần nhập tên
+    - Tàng hình: ẩn character khỏi người khác
+    - Hit & fade: teleport random sau mỗi combo
+    - Lag reduce nuclear
+]]
 
-local function scan(parent, depth, path)
-    if depth > 12 then return end
-    local ok, children = pcall(function() return parent:GetChildren() end)
-    if not ok then return end
-    for _, v in ipairs(children) do
-        local fullPath = path .. "." .. v.Name
-        if v:IsA("RemoteEvent") or v:IsA("RemoteFunction") or v:IsA("BindableEvent") then
-            table.insert(found, string.format("[%s] %s", v.ClassName, fullPath))
+local Players = game:GetService("Players")
+local RS = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local LP = Players.LocalPlayer
+
+local CFG = {
+    FarmEnabled   = true,
+    AttackRange   = 10,
+    ComboDelay    = 0.1,
+    M1Interval    = 0.13,
+    RetreatHP     = 45,
+    RetreatDist   = 80,
+    FinisherHP    = 30,
+    UltCD         = 60,
+    SkillCD       = 8,
+    NoFlyAnchor   = true,
+    LagReduce     = true,
+    AutoRespawn   = true,
+    Invisible     = true,   -- tàng hình
+    FadeRange     = 15,     -- sau combo teleport random trong range này
+}
+
+local farming       = CFG.FarmEnabled
+local retreating    = false
+local comboCooldown = false
+local lastUlt       = 0
+local lastSkill     = 0
+local anchoredTargets = {}
+
+-- ============================================================
+-- NUCLEAR LAG REDUCE
+-- ============================================================
+if CFG.LagReduce then
+    settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+    local lighting = game:GetService("Lighting")
+    lighting.GlobalShadows = false
+    lighting.FogEnd = 999999
+    pcall(function()
+        for _, v in ipairs(lighting:GetChildren()) do
+            if v:IsA("BlurEffect") or v:IsA("SunRaysEffect")
+            or v:IsA("ColorCorrectionEffect") or v:IsA("DepthOfFieldEffect") then
+                v.Enabled = false
+            end
         end
-        if not v:IsA("BaseScript") and not v:IsA("ModuleScript") then
-            scan(v, depth + 1, fullPath)
+    end)
+    local function nukeVFX(v)
+        pcall(function()
+            if LP.Character and v:IsDescendantOf(LP.Character) then return end
+            if v:IsA("ParticleEmitter") then v.Rate=0; v.Enabled=false
+            elseif v:IsA("Beam") or v:IsA("Trail") or v:IsA("Fire")
+                or v:IsA("Smoke") or v:IsA("Sparkles") then v.Enabled=false
+            elseif v:IsA("Decal") or v:IsA("Texture") then v.Transparency=1
+            elseif v:IsA("PointLight") or v:IsA("SpotLight")
+                or v:IsA("SurfaceLight") then v.Enabled=false
+            elseif v:IsA("BasePart") then v.CastShadow=false end
+        end)
+    end
+    for _, v in ipairs(workspace:GetDescendants()) do nukeVFX(v) end
+    workspace.DescendantAdded:Connect(nukeVFX)
+end
+
+-- ============================================================
+-- TÀNG HÌNH — ẩn local character với người khác
+-- client-side: parts transparent + tắt nameplate + tắt shadow
+-- ============================================================
+local function applyInvisible(char)
+    if not char then return end
+    for _, v in ipairs(char:GetDescendants()) do
+        pcall(function()
+            if v:IsA("BasePart") or v:IsA("MeshPart") or v:IsA("SpecialMesh") then
+                v.Transparency = 1
+                v.CastShadow = false
+            elseif v:IsA("Decal") or v:IsA("Texture") then
+                v.Transparency = 1
+            elseif v:IsA("BillboardGui") or v:IsA("ScreenGui") then
+                v.Enabled = false
+            end
+        end)
+    end
+    -- giữ HumanoidRootPart visible=false nhưng không transparent
+    -- để hitbox vẫn hoạt động
+    pcall(function()
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if hrp then hrp.Transparency = 1 end
+    end)
+end
+
+local function reapplyInvisible()
+    if not CFG.Invisible then return end
+    local char = LP.Character
+    if char then applyInvisible(char) end
+end
+
+-- reapply mỗi khi character spawn
+LP.CharacterAdded:Connect(function(char)
+    task.wait(0.5)
+    if CFG.Invisible then applyInvisible(char) end
+end)
+
+-- reapply liên tục phòng game reset transparency
+RunService.Heartbeat:Connect(function()
+    if not CFG.Invisible then return end
+    local char = LP.Character
+    if not char then return end
+    -- chỉ check Head để không lag
+    pcall(function()
+        local head = char:FindFirstChild("Head")
+        if head and head.Transparency ~= 1 then
+            applyInvisible(char)
         end
+    end)
+end)
+
+-- apply ngay lần đầu
+task.spawn(function()
+    task.wait(1)
+    if CFG.Invisible then reapplyInvisible() end
+end)
+
+-- ============================================================
+-- GET TARGET REMOTE — tự tìm theo tên player, không cần nhập
+-- ============================================================
+local globalRemote
+pcall(function()
+    globalRemote = RS.Resources.Brother["#Friend"].Communicate
+end)
+
+local function getTargetRemote(targetName)
+    local ok, remote = pcall(function()
+        return workspace.Live[targetName].Communicate
+    end)
+    if ok and remote then return remote end
+    return globalRemote
+end
+
+-- ============================================================
+-- HELPERS
+-- ============================================================
+local function getChar() return LP.Character end
+local function getHRP(char)
+    return char and char:FindFirstChild("HumanoidRootPart")
+end
+local function getHum(char)
+    return char and char:FindFirstChildWhichIsA("Humanoid")
+end
+local function isAlive(char)
+    local hum = getHum(char)
+    return hum and hum.Health > 0
+end
+local function getHPPct(char)
+    local hum = getHum(char)
+    if not hum then return 0 end
+    return (hum.Health / hum.MaxHealth) * 100
+end
+
+-- ============================================================
+-- AUTO TARGET SELECTION — tự tìm, không cần nhập tên
+-- ============================================================
+local function getTargets()
+    local myChar = getChar()
+    local myHRP = getHRP(myChar)
+    if not myHRP then return {} end
+    local list = {}
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr == LP then continue end
+        local char = plr.Character
+        if not char or not isAlive(char) then continue end
+        local hrp = getHRP(char)
+        if not hrp then continue end
+        local dist = (hrp.Position - myHRP.Position).Magnitude
+        local hp = getHPPct(char)
+        table.insert(list, {
+            char = char,
+            hrp  = hrp,
+            dist = dist,
+            hp   = hp,
+            name = plr.Name,
+            plr  = plr,
+        })
+    end
+    -- ưu tiên: HP thấp < 30% lên đầu, còn lại sort theo khoảng cách
+    table.sort(list, function(a, b)
+        if a.hp < CFG.FinisherHP and b.hp >= CFG.FinisherHP then return true end
+        if b.hp < CFG.FinisherHP and a.hp >= CFG.FinisherHP then return false end
+        return a.dist < b.dist
+    end)
+    return list
+end
+
+-- ============================================================
+-- TELEPORT + RETREAT + HIT-FADE
+-- ============================================================
+local function tpBehindTarget(targetHRP)
+    local myHRP = getHRP(getChar())
+    if not myHRP or not targetHRP then return end
+    -- teleport ngay sau lưng target
+    local dir = (myHRP.Position - targetHRP.Position).Unit
+    myHRP.CFrame = CFrame.new(targetHRP.Position + dir * 3 + Vector3.new(0, 1, 0))
+end
+
+local function fadeAway(fromPos)
+    -- teleport random trong CFG.FadeRange sau khi đánh
+    local myHRP = getHRP(getChar())
+    if not myHRP then return end
+    local angle = math.random() * math.pi * 2
+    local r = CFG.FadeRange * (0.5 + math.random() * 0.5)
+    myHRP.CFrame = CFrame.new(
+        fromPos + Vector3.new(math.cos(angle) * r, 0, math.sin(angle) * r)
+    )
+end
+
+local function retreat()
+    retreating = true
+    local myHRP = getHRP(getChar())
+    if myHRP then
+        local angle = math.random() * math.pi * 2
+        myHRP.CFrame = CFrame.new(myHRP.Position
+            + Vector3.new(math.cos(angle), 0, math.sin(angle)) * CFG.RetreatDist)
+    end
+    task.wait(3)
+    retreating = false
+end
+
+-- ============================================================
+-- NO-FLY ANCHOR
+-- ============================================================
+local function startAnchor(targetChar)
+    if not CFG.NoFlyAnchor or anchoredTargets[targetChar] then return end
+    local tHRP = getHRP(targetChar)
+    if not tHRP then return end
+    local groundY = tHRP.Position.Y
+    anchoredTargets[targetChar] = true
+    task.spawn(function()
+        local conn
+        conn = RunService.Heartbeat:Connect(function()
+            if not anchoredTargets[targetChar] or not isAlive(targetChar) or not tHRP.Parent then
+                conn:Disconnect(); anchoredTargets[targetChar] = nil; return
+            end
+            pcall(function()
+                local vel = tHRP.AssemblyLinearVelocity
+                if vel.Y > 5 then
+                    tHRP.AssemblyLinearVelocity = Vector3.new(vel.X, 0, vel.Z)
+                end
+                if tHRP.Position.Y > groundY + 8 then
+                    tHRP.CFrame = CFrame.new(tHRP.Position.X, groundY + 1, tHRP.Position.Z)
+                end
+            end)
+        end)
+        task.wait(4)
+        conn:Disconnect()
+        anchoredTargets[targetChar] = nil
+    end)
+end
+
+-- ============================================================
+-- FIRE COMBAT
+-- ============================================================
+local ACTION_M1    = {"M1", "Punch", 1, "BasicAttack", "Attack"}
+local ACTION_SKILL = {"Q", "Skill1", 2, "E", "Skill"}
+local ACTION_ULT   = {"R", "Ult", 3, "Ultimate", "F"}
+
+local function fireCombat(remote, targetChar, actionList)
+    if not remote then return end
+    local tHRP = getHRP(targetChar)
+    for _, action in ipairs(actionList) do
+        pcall(function() remote:FireServer(action) end)
+        pcall(function() remote:FireServer(action, targetChar) end)
+        if tHRP then
+            pcall(function() remote:FireServer(action, tHRP) end)
+            pcall(function() remote:FireServer(action, tHRP.Position) end)
+        end
+    end
+    if globalRemote and globalRemote ~= remote then
+        for _, action in ipairs(actionList) do
+            pcall(function() globalRemote:FireServer(action) end)
+            if tHRP then
+                pcall(function() globalRemote:FireServer(action, tHRP.Position) end)
+            end
+        end
+    end
+    local myHum = getHum(getChar())
+    if myHum and tHRP then
+        pcall(function() myHum:MoveTo(tHRP.Position) end)
     end
 end
 
-scan(RS, 0, "RS")
-scan(game:GetService("Players"), 0, "Players")
-scan(workspace, 0, "WS")
+-- ============================================================
+-- COMBO ENGINE
+-- ============================================================
+local function doCombo(target)
+    if comboCooldown then return end
+    comboCooldown = true
+
+    local remote = getTargetRemote(target.name)
+    local attackPos = target.hrp and target.hrp.Position or Vector3.new(0,0,0)
+
+    tpBehindTarget(target.hrp)
+    startAnchor(target.char)
+
+    local now = tick()
+
+    if target.hp < CFG.FinisherHP then
+        for _ = 1, 3 do
+            if not isAlive(target.char) then break end
+            fireCombat(remote, target.char, ACTION_M1)
+            task.wait(CFG.ComboDelay)
+        end
+        if now - lastSkill > CFG.SkillCD then
+            fireCombat(remote, target.char, ACTION_SKILL)
+            lastSkill = now
+            task.wait(0.3)
+        end
+        if now - lastUlt > CFG.UltCD then
+            fireCombat(remote, target.char, ACTION_ULT)
+            lastUlt = now
+        end
+    else
+        for i = 1, 5 do
+            if not isAlive(target.char) then break end
+            fireCombat(remote, target.char, ACTION_M1)
+            task.wait(CFG.ComboDelay)
+        end
+        if now - lastSkill > CFG.SkillCD then
+            fireCombat(remote, target.char, ACTION_SKILL)
+            lastSkill = now
+        end
+    end
+
+    -- fade sau combo
+    fadeAway(attackPos)
+
+    task.wait(0.4)
+    comboCooldown = false
+end
 
 -- ============================================================
--- GUI
+-- ULT AUTO LOOP
+-- ============================================================
+task.spawn(function()
+    while true do
+        task.wait(1)
+        if not farming then continue end
+        local now = tick()
+        if now - lastUlt < CFG.UltCD then continue end
+        if not isAlive(getChar()) then continue end
+        local targets = getTargets()
+        if #targets > 0 and targets[1].dist < 20 then
+            local r = getTargetRemote(targets[1].name)
+            fireCombat(r, targets[1].char, ACTION_ULT)
+            lastUlt = now
+        end
+    end
+end)
+
+-- ============================================================
+-- CONTINUOUS M1 LOOP
+-- ============================================================
+task.spawn(function()
+    while true do
+        task.wait(CFG.M1Interval)
+        if not farming or retreating or comboCooldown then continue end
+        if not isAlive(getChar()) then continue end
+        local targets = getTargets()
+        if #targets > 0 and targets[1].dist < 8 then
+            local r = getTargetRemote(targets[1].name)
+            fireCombat(r, targets[1].char, ACTION_M1)
+            startAnchor(targets[1].char)
+        end
+    end
+end)
+
+-- ============================================================
+-- MAIN LOOP
+-- ============================================================
+task.spawn(function()
+    while true do
+        task.wait(0.2)
+        if not farming then continue end
+        local myChar = getChar()
+        if not myChar or not isAlive(myChar) then
+            if CFG.AutoRespawn then
+                pcall(function() LP:LoadCharacter() end)
+                task.wait(3)
+            end
+            continue
+        end
+        if getHPPct(myChar) < CFG.RetreatHP and not retreating then
+            task.spawn(retreat); continue
+        end
+        if retreating then continue end
+        local targets = getTargets()
+        if #targets == 0 then continue end
+        local best = targets[1]
+        if best.dist > CFG.AttackRange then
+            tpBehindTarget(best.hrp)
+            task.wait(0.1)
+        else
+            task.spawn(function() doCombo(best) end)
+            task.wait(CFG.ComboDelay * 5)
+        end
+    end
+end)
+
+-- ============================================================
+-- GUI — toggle farm + toggle tàng hình
 -- ============================================================
 local gui = Instance.new("ScreenGui")
 gui.ResetOnSpawn = false
@@ -31,120 +418,73 @@ gui.IgnoreGuiInset = true
 pcall(function() gui.Parent = gethui() end)
 if not gui.Parent then gui.Parent = LP.PlayerGui end
 
--- Main window — compact size, draggable
 local win = Instance.new("Frame", gui)
-win.Size = UDim2.new(0, 340, 0, 320)
-win.Position = UDim2.new(0.5, -170, 0.1, 0)
+win.Size = UDim2.new(0, 175, 0, 80)
+win.Position = UDim2.new(0, 10, 0.5, 0)
 win.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 win.BorderSizePixel = 0
 win.Active = true
 win.Draggable = true
-Instance.new("UICorner", win).CornerRadius = UDim.new(0, 10)
+Instance.new("UICorner", win).CornerRadius = UDim.new(0, 8)
 
--- Title bar
-local titleBar = Instance.new("Frame", win)
-titleBar.Size = UDim2.new(1, 0, 0, 32)
-titleBar.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-titleBar.BorderSizePixel = 0
-Instance.new("UICorner", titleBar).CornerRadius = UDim.new(0, 10)
+local lblFarm = Instance.new("TextLabel", win)
+lblFarm.Size = UDim2.new(1, 0, 0, 22)
+lblFarm.Position = UDim2.new(0, 0, 0, 2)
+lblFarm.BackgroundTransparency = 1
+lblFarm.Text = "🥔 Farm: ON"
+lblFarm.TextColor3 = Color3.fromRGB(0, 255, 100)
+lblFarm.TextScaled = true
+lblFarm.Font = Enum.Font.GothamBold
 
-local titleLbl = Instance.new("TextLabel", titleBar)
-titleLbl.Size = UDim2.new(1, -80, 1, 0)
-titleLbl.Position = UDim2.new(0, 10, 0, 0)
-titleLbl.BackgroundTransparency = 1
-titleLbl.Text = "🔍 REMOTES: " .. #found .. " found"
-titleLbl.TextColor3 = Color3.fromRGB(0, 255, 100)
-titleLbl.TextScaled = true
-titleLbl.Font = Enum.Font.GothamBold
-titleLbl.TextXAlignment = Enum.TextXAlignment.Left
+local btnFarm = Instance.new("TextButton", win)
+btnFarm.Size = UDim2.new(1, -10, 0, 22)
+btnFarm.Position = UDim2.new(0, 5, 0, 26)
+btnFarm.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+btnFarm.Text = "Toggle Farm"
+btnFarm.TextColor3 = Color3.fromRGB(255,255,255)
+btnFarm.TextScaled = true
+btnFarm.Font = Enum.Font.Gotham
+Instance.new("UICorner", btnFarm).CornerRadius = UDim.new(0, 6)
 
--- Copy ALL button
-local copyBtn = Instance.new("TextButton", titleBar)
-copyBtn.Size = UDim2.new(0, 60, 0, 22)
-copyBtn.Position = UDim2.new(1, -88, 0.5, -11)
-copyBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 220)
-copyBtn.Text = "COPY ALL"
-copyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-copyBtn.TextScaled = true
-copyBtn.Font = Enum.Font.GothamBold
-Instance.new("UICorner", copyBtn).CornerRadius = UDim.new(0, 6)
+local btnInvis = Instance.new("TextButton", win)
+btnInvis.Size = UDim2.new(1, -10, 0, 22)
+btnInvis.Position = UDim2.new(0, 5, 0, 52)
+btnInvis.BackgroundColor3 = Color3.fromRGB(40, 40, 100)
+btnInvis.Text = "👻 Tàng hình: ON"
+btnInvis.TextColor3 = Color3.fromRGB(180, 180, 255)
+btnInvis.TextScaled = true
+btnInvis.Font = Enum.Font.Gotham
+Instance.new("UICorner", btnInvis).CornerRadius = UDim.new(0, 6)
 
--- Close button
-local closeBtn = Instance.new("TextButton", titleBar)
-closeBtn.Size = UDim2.new(0, 24, 0, 22)
-closeBtn.Position = UDim2.new(1, -26, 0.5, -11)
-closeBtn.BackgroundColor3 = Color3.fromRGB(200, 40, 40)
-closeBtn.Text = "✕"
-closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-closeBtn.TextScaled = true
-closeBtn.Font = Enum.Font.GothamBold
-Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 6)
-
--- Scroll list
-local scroll = Instance.new("ScrollingFrame", win)
-scroll.Size = UDim2.new(1, -10, 1, -42)
-scroll.Position = UDim2.new(0, 5, 0, 37)
-scroll.BackgroundTransparency = 1
-scroll.ScrollBarThickness = 5
-scroll.ScrollBarImageColor3 = Color3.fromRGB(80, 80, 80)
-scroll.CanvasSize = UDim2.new(0, 0, 0, #found * 22 + 10)
-scroll.BorderSizePixel = 0
-
-local layout = Instance.new("UIListLayout", scroll)
-layout.SortOrder = Enum.SortOrder.LayoutOrder
-layout.Padding = UDim.new(0, 2)
-
-for i, line in ipairs(found) do
-    local row = Instance.new("Frame", scroll)
-    row.Size = UDim2.new(1, 0, 0, 20)
-    row.BackgroundColor3 = i % 2 == 0 and Color3.fromRGB(22, 22, 22) or Color3.fromRGB(28, 28, 28)
-    row.BorderSizePixel = 0
-    row.LayoutOrder = i
-
-    local lbl = Instance.new("TextLabel", row)
-    lbl.Size = UDim2.new(1, -50, 1, 0)
-    lbl.Position = UDim2.new(0, 4, 0, 0)
-    lbl.BackgroundTransparency = 1
-    lbl.Text = i .. ". " .. line
-    lbl.TextColor3 = Color3.fromRGB(210, 210, 210)
-    lbl.TextXAlignment = Enum.TextXAlignment.Left
-    lbl.TextSize = 12
-    lbl.Font = Enum.Font.Gotham
-    lbl.TextTruncate = Enum.TextTruncate.AtEnd
-
-    -- Per-row copy button
-    local rowCopy = Instance.new("TextButton", row)
-    rowCopy.Size = UDim2.new(0, 44, 0, 16)
-    rowCopy.Position = UDim2.new(1, -46, 0.5, -8)
-    rowCopy.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-    rowCopy.Text = "copy"
-    rowCopy.TextColor3 = Color3.fromRGB(180, 180, 180)
-    rowCopy.TextSize = 11
-    rowCopy.Font = Enum.Font.Gotham
-    Instance.new("UICorner", rowCopy).CornerRadius = UDim.new(0, 4)
-
-    local rawLine = line -- capture
-    rowCopy.MouseButton1Click:Connect(function()
-        pcall(function() setclipboard(rawLine) end)
-        rowCopy.Text = "✓"
-        rowCopy.TextColor3 = Color3.fromRGB(0, 255, 100)
-        task.delay(1.5, function()
-            rowCopy.Text = "copy"
-            rowCopy.TextColor3 = Color3.fromRGB(180, 180, 180)
-        end)
-    end)
-end
-
--- COPY ALL logic
-copyBtn.MouseButton1Click:Connect(function()
-    local all = table.concat(found, "\n")
-    pcall(function() setclipboard(all) end)
-    copyBtn.Text = "✓ COPIED"
-    copyBtn.BackgroundColor3 = Color3.fromRGB(0, 160, 60)
-    task.delay(2, function()
-        copyBtn.Text = "COPY ALL"
-        copyBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 220)
-    end)
+btnFarm.MouseButton1Click:Connect(function()
+    farming = not farming
+    lblFarm.Text = farming and "🥔 Farm: ON" or "❌ Farm: OFF"
+    lblFarm.TextColor3 = farming and Color3.fromRGB(0,255,100) or Color3.fromRGB(255,80,80)
 end)
 
-closeBtn.MouseButton1Click:Connect(function() gui:Destroy() end)
+btnInvis.MouseButton1Click:Connect(function()
+    CFG.Invisible = not CFG.Invisible
+    if CFG.Invisible then
+        reapplyInvisible()
+        btnInvis.Text = "👻 Tàng hình: ON"
+        btnInvis.BackgroundColor3 = Color3.fromRGB(40, 40, 100)
+    else
+        -- restore character visible
+        local char = LP.Character
+        if char then
+            for _, v in ipairs(char:GetDescendants()) do
+                pcall(function()
+                    if v:IsA("BasePart") or v:IsA("MeshPart") then
+                        v.Transparency = 0
+                    elseif v:IsA("BillboardGui") then
+                        v.Enabled = true
+                    end
+                end)
+            end
+        end
+        btnInvis.Text = "👁 Tàng hình: OFF"
+        btnInvis.BackgroundColor3 = Color3.fromRGB(80, 40, 40)
+    end
+end)
+
+print("[v5.2] Loaded — auto target + tàng hình active")
