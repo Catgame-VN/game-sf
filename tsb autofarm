@@ -1,490 +1,217 @@
---[[
-    TSB Genos Auto Farm v5.2
-    - Tự động tìm target gần nhất, không cần nhập tên
-    - Tàng hình: ẩn character khỏi người khác
-    - Hit & fade: teleport random sau mỗi combo
-    - Lag reduce nuclear
-]]
+-- tsb_invisible.lua — catlazy
+-- TSB Auto Farm + Tàng hình (Invisible)
+
+if not game:IsLoaded() then game.Loaded:Wait() end
 
 local Players = game:GetService("Players")
-local RS = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local VIM = game:GetService("VirtualInputManager")
 local LP = Players.LocalPlayer
+local PG = LP:WaitForChild("PlayerGui")
 
-local CFG = {
-    FarmEnabled   = true,
-    AttackRange   = 10,
-    ComboDelay    = 0.1,
-    M1Interval    = 0.13,
-    RetreatHP     = 45,
-    RetreatDist   = 80,
-    FinisherHP    = 30,
-    UltCD         = 60,
-    SkillCD       = 8,
-    NoFlyAnchor   = true,
-    LagReduce     = true,
-    AutoRespawn   = true,
-    Invisible     = true,   -- tàng hình
-    FadeRange     = 15,     -- sau combo teleport random trong range này
+local CONFIG = {
+    auto_farm = false,
+    kill_aura = true,
+    invisible = true,     -- Bật tàng hình
+    hitbox_size = 25,     -- Kích thước hitbox của địch (25 là an toàn)
+    attack_range = 25,    -- Khoảng cách tối đa để đánh
+    m1_speed = 0.05,      -- Tốc độ đấm
+    use_skills = true,    -- Tự spam skill (Z, X, C, V, F, G)
+    skill_delay = 1.5,
+    auto_dodge = true,
 }
 
-local farming       = CFG.FarmEnabled
-local retreating    = false
-local comboCooldown = false
-local lastUlt       = 0
-local lastSkill     = 0
-local anchoredTargets = {}
+local function log(m) print("[TSB] " .. m) end
 
--- ============================================================
--- NUCLEAR LAG REDUCE
--- ============================================================
-if CFG.LagReduce then
-    settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
-    local lighting = game:GetService("Lighting")
-    lighting.GlobalShadows = false
-    lighting.FogEnd = 999999
-    pcall(function()
-        for _, v in ipairs(lighting:GetChildren()) do
-            if v:IsA("BlurEffect") or v:IsA("SunRaysEffect")
-            or v:IsA("ColorCorrectionEffect") or v:IsA("DepthOfFieldEffect") then
-                v.Enabled = false
-            end
-        end
-    end)
-    local function nukeVFX(v)
-        pcall(function()
-            if LP.Character and v:IsDescendantOf(LP.Character) then return end
-            if v:IsA("ParticleEmitter") then v.Rate=0; v.Enabled=false
-            elseif v:IsA("Beam") or v:IsA("Trail") or v:IsA("Fire")
-                or v:IsA("Smoke") or v:IsA("Sparkles") then v.Enabled=false
-            elseif v:IsA("Decal") or v:IsA("Texture") then v.Transparency=1
-            elseif v:IsA("PointLight") or v:IsA("SpotLight")
-                or v:IsA("SurfaceLight") then v.Enabled=false
-            elseif v:IsA("BasePart") then v.CastShadow=false end
-        end)
-    end
-    for _, v in ipairs(workspace:GetDescendants()) do nukeVFX(v) end
-    workspace.DescendantAdded:Connect(nukeVFX)
+local function getChar()
+    return LP.Character or LP.CharacterAdded:Wait()
 end
 
--- ============================================================
--- TÀNG HÌNH — ẩn local character với người khác
--- client-side: parts transparent + tắt nameplate + tắt shadow
--- ============================================================
-local function applyInvisible(char)
+-- ===== HÀM TÀNG HÌNH (INVISIBILITY) =====
+local function setInvisibility(state)
+    local char = LP.Character
     if not char then return end
+    
     for _, v in ipairs(char:GetDescendants()) do
-        pcall(function()
-            if v:IsA("BasePart") or v:IsA("MeshPart") or v:IsA("SpecialMesh") then
-                v.Transparency = 1
-                v.CastShadow = false
-            elseif v:IsA("Decal") or v:IsA("Texture") then
-                v.Transparency = 1
-            elseif v:IsA("BillboardGui") or v:IsA("ScreenGui") then
-                v.Enabled = false
-            end
-        end)
+        if v:IsA("BasePart") then
+            v.Transparency = state and 1 or 0
+            v.CanCollide = not state -- Nếu tàng hình thì tắt va chạm để đi xuyên
+        elseif v:IsA("Decal") or v:IsA("Texture") or v:IsA("Accessory") then
+            v.Transparency = state and 1 or 0
+        elseif v:IsA("BillboardGui") then
+            v.Enabled = not state -- Xoá tên trên đầu
+        end
     end
-    -- giữ HumanoidRootPart visible=false nhưng không transparent
-    -- để hitbox vẫn hoạt động
-    pcall(function()
-        local hrp = char:FindFirstChild("HumanoidRootPart")
-        if hrp then hrp.Transparency = 1 end
-    end)
+    
+    -- Xử lý riêng cho cái bóng (Shadow)
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if humanoid then
+        local shadow = humanoid:FindFirstChild("Shadow")
+        if shadow and shadow:IsA("BasePart") then
+            shadow.Transparency = state and 1 or 0
+        end
+    end
 end
 
-local function reapplyInvisible()
-    if not CFG.Invisible then return end
-    local char = LP.Character
-    if char then applyInvisible(char) end
-end
-
--- reapply mỗi khi character spawn
+-- Duy trì tàng hình khi respawn
 LP.CharacterAdded:Connect(function(char)
-    task.wait(0.5)
-    if CFG.Invisible then applyInvisible(char) end
-end)
-
--- reapply liên tục phòng game reset transparency
-RunService.Heartbeat:Connect(function()
-    if not CFG.Invisible then return end
-    local char = LP.Character
-    if not char then return end
-    -- chỉ check Head để không lag
-    pcall(function()
-        local head = char:FindFirstChild("Head")
-        if head and head.Transparency ~= 1 then
-            applyInvisible(char)
-        end
-    end)
-end)
-
--- apply ngay lần đầu
-task.spawn(function()
     task.wait(1)
-    if CFG.Invisible then reapplyInvisible() end
+    if CONFIG.invisible then
+        setInvisibility(true)
+    end
 end)
 
--- ============================================================
--- GET TARGET REMOTE — tự tìm theo tên player, không cần nhập
--- ============================================================
-local globalRemote
-pcall(function()
-    globalRemote = RS.Resources.Brother["#Friend"].Communicate
-end)
-
-local function getTargetRemote(targetName)
-    local ok, remote = pcall(function()
-        return workspace.Live[targetName].Communicate
-    end)
-    if ok and remote then return remote end
-    return globalRemote
-end
-
--- ============================================================
--- HELPERS
--- ============================================================
-local function getChar() return LP.Character end
-local function getHRP(char)
-    return char and char:FindFirstChild("HumanoidRootPart")
-end
-local function getHum(char)
-    return char and char:FindFirstChildWhichIsA("Humanoid")
-end
-local function isAlive(char)
-    local hum = getHum(char)
-    return hum and hum.Health > 0
-end
-local function getHPPct(char)
-    local hum = getHum(char)
-    if not hum then return 0 end
-    return (hum.Health / hum.MaxHealth) * 100
-end
-
--- ============================================================
--- AUTO TARGET SELECTION — tự tìm, không cần nhập tên
--- ============================================================
-local function getTargets()
+-- ===== TÌM ĐỊCH GẦN NHẤT =====
+local function getNearestEnemy()
     local myChar = getChar()
-    local myHRP = getHRP(myChar)
-    if not myHRP then return {} end
-    local list = {}
+    if not myChar then return nil end
+    local myHRP = myChar:FindFirstChild("HumanoidRootPart")
+    local myHum = myChar:FindFirstChildOfClass("Humanoid")
+    if not myHRP or not myHum or myHum.Health <= 0 then return nil end
+
+    local closest = nil
+    local minDist = CONFIG.attack_range
+
     for _, plr in ipairs(Players:GetPlayers()) do
-        if plr == LP then continue end
-        local char = plr.Character
-        if not char or not isAlive(char) then continue end
-        local hrp = getHRP(char)
-        if not hrp then continue end
-        local dist = (hrp.Position - myHRP.Position).Magnitude
-        local hp = getHPPct(char)
-        table.insert(list, {
-            char = char,
-            hrp  = hrp,
-            dist = dist,
-            hp   = hp,
-            name = plr.Name,
-            plr  = plr,
-        })
-    end
-    -- ưu tiên: HP thấp < 30% lên đầu, còn lại sort theo khoảng cách
-    table.sort(list, function(a, b)
-        if a.hp < CFG.FinisherHP and b.hp >= CFG.FinisherHP then return true end
-        if b.hp < CFG.FinisherHP and a.hp >= CFG.FinisherHP then return false end
-        return a.dist < b.dist
-    end)
-    return list
-end
-
--- ============================================================
--- TELEPORT + RETREAT + HIT-FADE
--- ============================================================
-local function tpBehindTarget(targetHRP)
-    local myHRP = getHRP(getChar())
-    if not myHRP or not targetHRP then return end
-    -- teleport ngay sau lưng target
-    local dir = (myHRP.Position - targetHRP.Position).Unit
-    myHRP.CFrame = CFrame.new(targetHRP.Position + dir * 3 + Vector3.new(0, 1, 0))
-end
-
-local function fadeAway(fromPos)
-    -- teleport random trong CFG.FadeRange sau khi đánh
-    local myHRP = getHRP(getChar())
-    if not myHRP then return end
-    local angle = math.random() * math.pi * 2
-    local r = CFG.FadeRange * (0.5 + math.random() * 0.5)
-    myHRP.CFrame = CFrame.new(
-        fromPos + Vector3.new(math.cos(angle) * r, 0, math.sin(angle) * r)
-    )
-end
-
-local function retreat()
-    retreating = true
-    local myHRP = getHRP(getChar())
-    if myHRP then
-        local angle = math.random() * math.pi * 2
-        myHRP.CFrame = CFrame.new(myHRP.Position
-            + Vector3.new(math.cos(angle), 0, math.sin(angle)) * CFG.RetreatDist)
-    end
-    task.wait(3)
-    retreating = false
-end
-
--- ============================================================
--- NO-FLY ANCHOR
--- ============================================================
-local function startAnchor(targetChar)
-    if not CFG.NoFlyAnchor or anchoredTargets[targetChar] then return end
-    local tHRP = getHRP(targetChar)
-    if not tHRP then return end
-    local groundY = tHRP.Position.Y
-    anchoredTargets[targetChar] = true
-    task.spawn(function()
-        local conn
-        conn = RunService.Heartbeat:Connect(function()
-            if not anchoredTargets[targetChar] or not isAlive(targetChar) or not tHRP.Parent then
-                conn:Disconnect(); anchoredTargets[targetChar] = nil; return
-            end
-            pcall(function()
-                local vel = tHRP.AssemblyLinearVelocity
-                if vel.Y > 5 then
-                    tHRP.AssemblyLinearVelocity = Vector3.new(vel.X, 0, vel.Z)
+        if plr ~= LP and plr.Character then
+            local char = plr.Character
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            
+            if hrp and hum and hum.Health > 0 then
+                local dist = (myHRP.Position - hrp.Position).Magnitude
+                if dist < minDist then
+                    minDist = dist
+                    closest = hrp
                 end
-                if tHRP.Position.Y > groundY + 8 then
-                    tHRP.CFrame = CFrame.new(tHRP.Position.X, groundY + 1, tHRP.Position.Z)
+            end
+        end
+    end
+    return closest
+end
+
+-- ===== AUTOFARM LOGIC =====
+task.spawn(function()
+    while true do
+        if CONFIG.auto_farm then
+            local myChar = getChar()
+            local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
+            local enemyHRP = getNearestEnemy()
+
+            if myHRP and enemyHRP then
+                -- Tự xoay mặt về phía địch
+                myHRP.CFrame = CFrame.lookAt(myHRP.Position, enemyHRP.Position)
+
+                -- Đấm (M1)
+                if CONFIG.kill_aura then
+                    VIM:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+                    task.wait(CONFIG.m1_speed)
+                    VIM:SendMouseButtonEvent(0, 0, 0, false, game, 0)
                 end
-            end)
-        end)
-        task.wait(4)
-        conn:Disconnect()
-        anchoredTargets[targetChar] = nil
-    end)
-end
 
--- ============================================================
--- FIRE COMBAT
--- ============================================================
-local ACTION_M1    = {"M1", "Punch", 1, "BasicAttack", "Attack"}
-local ACTION_SKILL = {"Q", "Skill1", 2, "E", "Skill"}
-local ACTION_ULT   = {"R", "Ult", 3, "Ultimate", "F"}
-
-local function fireCombat(remote, targetChar, actionList)
-    if not remote then return end
-    local tHRP = getHRP(targetChar)
-    for _, action in ipairs(actionList) do
-        pcall(function() remote:FireServer(action) end)
-        pcall(function() remote:FireServer(action, targetChar) end)
-        if tHRP then
-            pcall(function() remote:FireServer(action, tHRP) end)
-            pcall(function() remote:FireServer(action, tHRP.Position) end)
-        end
-    end
-    if globalRemote and globalRemote ~= remote then
-        for _, action in ipairs(actionList) do
-            pcall(function() globalRemote:FireServer(action) end)
-            if tHRP then
-                pcall(function() globalRemote:FireServer(action, tHRP.Position) end)
-            end
-        end
-    end
-    local myHum = getHum(getChar())
-    if myHum and tHRP then
-        pcall(function() myHum:MoveTo(tHRP.Position) end)
-    end
-end
-
--- ============================================================
--- COMBO ENGINE
--- ============================================================
-local function doCombo(target)
-    if comboCooldown then return end
-    comboCooldown = true
-
-    local remote = getTargetRemote(target.name)
-    local attackPos = target.hrp and target.hrp.Position or Vector3.new(0,0,0)
-
-    tpBehindTarget(target.hrp)
-    startAnchor(target.char)
-
-    local now = tick()
-
-    if target.hp < CFG.FinisherHP then
-        for _ = 1, 3 do
-            if not isAlive(target.char) then break end
-            fireCombat(remote, target.char, ACTION_M1)
-            task.wait(CFG.ComboDelay)
-        end
-        if now - lastSkill > CFG.SkillCD then
-            fireCombat(remote, target.char, ACTION_SKILL)
-            lastSkill = now
-            task.wait(0.3)
-        end
-        if now - lastUlt > CFG.UltCD then
-            fireCombat(remote, target.char, ACTION_ULT)
-            lastUlt = now
-        end
-    else
-        for i = 1, 5 do
-            if not isAlive(target.char) then break end
-            fireCombat(remote, target.char, ACTION_M1)
-            task.wait(CFG.ComboDelay)
-        end
-        if now - lastSkill > CFG.SkillCD then
-            fireCombat(remote, target.char, ACTION_SKILL)
-            lastSkill = now
-        end
-    end
-
-    -- fade sau combo
-    fadeAway(attackPos)
-
-    task.wait(0.4)
-    comboCooldown = false
-end
-
--- ============================================================
--- ULT AUTO LOOP
--- ============================================================
-task.spawn(function()
-    while true do
-        task.wait(1)
-        if not farming then continue end
-        local now = tick()
-        if now - lastUlt < CFG.UltCD then continue end
-        if not isAlive(getChar()) then continue end
-        local targets = getTargets()
-        if #targets > 0 and targets[1].dist < 20 then
-            local r = getTargetRemote(targets[1].name)
-            fireCombat(r, targets[1].char, ACTION_ULT)
-            lastUlt = now
-        end
-    end
-end)
-
--- ============================================================
--- CONTINUOUS M1 LOOP
--- ============================================================
-task.spawn(function()
-    while true do
-        task.wait(CFG.M1Interval)
-        if not farming or retreating or comboCooldown then continue end
-        if not isAlive(getChar()) then continue end
-        local targets = getTargets()
-        if #targets > 0 and targets[1].dist < 8 then
-            local r = getTargetRemote(targets[1].name)
-            fireCombat(r, targets[1].char, ACTION_M1)
-            startAnchor(targets[1].char)
-        end
-    end
-end)
-
--- ============================================================
--- MAIN LOOP
--- ============================================================
-task.spawn(function()
-    while true do
-        task.wait(0.2)
-        if not farming then continue end
-        local myChar = getChar()
-        if not myChar or not isAlive(myChar) then
-            if CFG.AutoRespawn then
-                pcall(function() LP:LoadCharacter() end)
-                task.wait(3)
-            end
-            continue
-        end
-        if getHPPct(myChar) < CFG.RetreatHP and not retreating then
-            task.spawn(retreat); continue
-        end
-        if retreating then continue end
-        local targets = getTargets()
-        if #targets == 0 then continue end
-        local best = targets[1]
-        if best.dist > CFG.AttackRange then
-            tpBehindTarget(best.hrp)
-            task.wait(0.1)
-        else
-            task.spawn(function() doCombo(best) end)
-            task.wait(CFG.ComboDelay * 5)
-        end
-    end
-end)
-
--- ============================================================
--- GUI — toggle farm + toggle tàng hình
--- ============================================================
-local gui = Instance.new("ScreenGui")
-gui.ResetOnSpawn = false
-gui.IgnoreGuiInset = true
-pcall(function() gui.Parent = gethui() end)
-if not gui.Parent then gui.Parent = LP.PlayerGui end
-
-local win = Instance.new("Frame", gui)
-win.Size = UDim2.new(0, 175, 0, 80)
-win.Position = UDim2.new(0, 10, 0.5, 0)
-win.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
-win.BorderSizePixel = 0
-win.Active = true
-win.Draggable = true
-Instance.new("UICorner", win).CornerRadius = UDim.new(0, 8)
-
-local lblFarm = Instance.new("TextLabel", win)
-lblFarm.Size = UDim2.new(1, 0, 0, 22)
-lblFarm.Position = UDim2.new(0, 0, 0, 2)
-lblFarm.BackgroundTransparency = 1
-lblFarm.Text = "🥔 Farm: ON"
-lblFarm.TextColor3 = Color3.fromRGB(0, 255, 100)
-lblFarm.TextScaled = true
-lblFarm.Font = Enum.Font.GothamBold
-
-local btnFarm = Instance.new("TextButton", win)
-btnFarm.Size = UDim2.new(1, -10, 0, 22)
-btnFarm.Position = UDim2.new(0, 5, 0, 26)
-btnFarm.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-btnFarm.Text = "Toggle Farm"
-btnFarm.TextColor3 = Color3.fromRGB(255,255,255)
-btnFarm.TextScaled = true
-btnFarm.Font = Enum.Font.Gotham
-Instance.new("UICorner", btnFarm).CornerRadius = UDim.new(0, 6)
-
-local btnInvis = Instance.new("TextButton", win)
-btnInvis.Size = UDim2.new(1, -10, 0, 22)
-btnInvis.Position = UDim2.new(0, 5, 0, 52)
-btnInvis.BackgroundColor3 = Color3.fromRGB(40, 40, 100)
-btnInvis.Text = "👻 Tàng hình: ON"
-btnInvis.TextColor3 = Color3.fromRGB(180, 180, 255)
-btnInvis.TextScaled = true
-btnInvis.Font = Enum.Font.Gotham
-Instance.new("UICorner", btnInvis).CornerRadius = UDim.new(0, 6)
-
-btnFarm.MouseButton1Click:Connect(function()
-    farming = not farming
-    lblFarm.Text = farming and "🥔 Farm: ON" or "❌ Farm: OFF"
-    lblFarm.TextColor3 = farming and Color3.fromRGB(0,255,100) or Color3.fromRGB(255,80,80)
-end)
-
-btnInvis.MouseButton1Click:Connect(function()
-    CFG.Invisible = not CFG.Invisible
-    if CFG.Invisible then
-        reapplyInvisible()
-        btnInvis.Text = "👻 Tàng hình: ON"
-        btnInvis.BackgroundColor3 = Color3.fromRGB(40, 40, 100)
-    else
-        -- restore character visible
-        local char = LP.Character
-        if char then
-            for _, v in ipairs(char:GetDescendants()) do
-                pcall(function()
-                    if v:IsA("BasePart") or v:IsA("MeshPart") then
-                        v.Transparency = 0
-                    elseif v:IsA("BillboardGui") then
-                        v.Enabled = true
+                -- Spam Skill
+                if CONFIG.use_skills then
+                    local skills = {0x5A, 0x58, 0x43, 0x56, 0x46, 0x47} -- Z X C V F G
+                    for _, key in ipairs(skills) do
+                        VIM:SendKeyEvent(true, key, false, game)
+                        task.wait(0.05)
+                        VIM:SendKeyEvent(false, key, false, game)
                     end
-                end)
+                    task.wait(CONFIG.skill_delay)
+                end
             end
         end
-        btnInvis.Text = "👁 Tàng hình: OFF"
-        btnInvis.BackgroundColor3 = Color3.fromRGB(80, 40, 40)
+        task.wait(0.01)
     end
 end)
 
-print("[v5.2] Loaded — auto target + tàng hình active")
+-- ===== HITBOX EXTENDER (Phóng to hitbox địch) =====
+task.spawn(function()
+    RunService.Stepped:Connect(function()
+        if not CONFIG.auto_farm then return end
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= LP and plr.Character then
+                for _, part in ipairs(plr.Character:GetChildren()) do
+                    if part:IsA("BasePart") then
+                        part.Size = Vector3.new(CONFIG.hitbox_size, CONFIG.hitbox_size, CONFIG.hitbox_size)
+                        part.Transparency = 0.7 -- Nhìn thấy mờ mờ để biết vị trí địch
+                        part.CanCollide = false
+                    end
+                end
+            end
+        end
+    end)
+end)
+
+-- ===== AUTO DODGE =====
+task.spawn(function()
+    while true do
+        if CONFIG.auto_farm and CONFIG.auto_dodge then
+            local myChar = getChar()
+            local myHum = myChar and myChar:FindFirstChildOfClass("Humanoid")
+            if myHum and myHum.Health < myHum.MaxHealth * 0.8 then
+                VIM:SendKeyEvent(true, 0x20, false, game)
+                task.wait(0.1)
+                VIM:SendKeyEvent(false, 0x20, false, game)
+                task.wait(1.5)
+            end
+        end
+        task.wait(0.5)
+    end
+end)
+
+-- ===== UI =====
+local sg = Instance.new("ScreenGui")
+sg.Name = "TSBFarm"
+sg.ResetOnSpawn = false
+sg.Parent = PG
+
+local f = Instance.new("Frame")
+f.Size = UDim2.fromOffset(220, 230)
+f.Position = UDim2.new(0, 20, 0, 20)
+f.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+f.BorderSizePixel = 0
+f.Parent = sg
+Instance.new("UICorner", f).CornerRadius = UDim.new(0, 8)
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 30)
+title.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+title.Text = "  TSB Invisible Farm"
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Font = Enum.Font.GothamBold
+title.TextSize = 14
+title.Parent = f
+Instance.new("UICorner", title).CornerRadius = UDim.new(0, 8)
+
+local function createToggle(text, yOffset, default, callback)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, -20, 0, 35)
+    btn.Position = UDim2.fromOffset(10, yOffset)
+    btn.BackgroundColor3 = default and Color3.fromRGB(35, 155, 85) or Color3.fromRGB(55, 55, 70)
+    btn.Text = text .. (default and ": ON" or ": OFF")
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 12
+    btn.Parent = f
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+    
+    local state = default
+    btn.MouseButton1Click:Connect(function()
+        state = not state
+        btn.Text = text .. (state and ": ON" or ": OFF")
+        btn.BackgroundColor3 = state and Color3.fromRGB(35, 155, 85) or Color3.fromRGB(55, 55, 70)
+        callback(state)
+    end)
+end
+
+createToggle("Auto Farm", 40, false, function(s) CONFIG.auto_farm = s end)
+createToggle("Tàng Hình (Invisible)", 85, true, function(s) 
+    CONFIG.invisible = s
+    setInvisibility(s)
+end)
+createToggle("Kill Aura", 130, true, function(s) CONFIG.kill_aura = s end)
+createToggle("Auto Dodge", 175, true, function(s) CONFIG.auto_dodge = s end)
+
+log("loaded. Bật Auto Farm và Tàng Hình để chạy.")
