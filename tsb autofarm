@@ -1,382 +1,150 @@
+local RS = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local TeleportService = game:GetService("TeleportService")
-local HttpService = game:GetService("HttpService")
+local LP = Players.LocalPlayer
+local found = {}
 
-local player = Players.LocalPlayer
-local folder = workspace:WaitForChild("HalloweenCandy")
-local trees = workspace:WaitForChild("HalloweenDoorTrees")
-local camera = workspace.CurrentCamera
-
--- SETTINGS
-local LOOP_DELAY = 0.15
-local DOOR_WAIT_TIME = 3
-local CANDY_HEIGHT = 4
-local TREE_STAND_DISTANCE = 5
-local HOP_INTERVAL = 15 * 60
-
--- DOOR FIRE SETTINGS
-local DOOR_POST_TP_WAIT = 0.45
-local DOOR_FIRE_RETRIES = 4
-local DOOR_FIRE_GAP = 0.2
-local DOOR_BUSY_WAIT = 1.5
-local CAM_AIM_WAIT = 0.15
-
--- NO-DOOR HOP
-local NO_DOOR_HOP_TIME = 3
-
-local SCRIPT_URL = "https://raw.githubusercontent.com/Catgame-VN/game-sf/refs/heads/main/tsb%20autofarm"
-
--- STATUS
-local status = Drawing.new("Text")
-status.Text = "Discord: discord.gg/aBq4NTkMyP\nStatus: Finding candy..."
-status.Size = 18
-status.Center = true
-status.Outline = true
-status.Color = Color3.fromRGB(255, 255, 255)
-status.Visible = true
-
-RunService.RenderStepped:Connect(function()
-    camera = workspace.CurrentCamera
-    if camera then
-        status.Position = Vector2.new(camera.ViewportSize.X / 2, 35)
+local function scan(parent, depth, path)
+    if depth > 12 then return end
+    local ok, children = pcall(function() return parent:GetChildren() end)
+    if not ok then return end
+    for _, v in ipairs(children) do
+        local fullPath = path .. "." .. v.Name
+        if v:IsA("RemoteEvent") or v:IsA("RemoteFunction") or v:IsA("BindableEvent") then
+            table.insert(found, string.format("[%s] %s", v.ClassName, fullPath))
+        end
+        if not v:IsA("BaseScript") and not v:IsA("ModuleScript") then
+            scan(v, depth + 1, fullPath)
+        end
     end
+end
+
+scan(RS, 0, "RS")
+scan(game:GetService("Players"), 0, "Players")
+scan(workspace, 0, "WS")
+
+-- ============================================================
+-- GUI
+-- ============================================================
+local gui = Instance.new("ScreenGui")
+gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true
+pcall(function() gui.Parent = gethui() end)
+if not gui.Parent then gui.Parent = LP.PlayerGui end
+
+-- Main window — compact size, draggable
+local win = Instance.new("Frame", gui)
+win.Size = UDim2.new(0, 340, 0, 320)
+win.Position = UDim2.new(0.5, -170, 0.1, 0)
+win.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+win.BorderSizePixel = 0
+win.Active = true
+win.Draggable = true
+Instance.new("UICorner", win).CornerRadius = UDim.new(0, 10)
+
+-- Title bar
+local titleBar = Instance.new("Frame", win)
+titleBar.Size = UDim2.new(1, 0, 0, 32)
+titleBar.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+titleBar.BorderSizePixel = 0
+Instance.new("UICorner", titleBar).CornerRadius = UDim.new(0, 10)
+
+local titleLbl = Instance.new("TextLabel", titleBar)
+titleLbl.Size = UDim2.new(1, -80, 1, 0)
+titleLbl.Position = UDim2.new(0, 10, 0, 0)
+titleLbl.BackgroundTransparency = 1
+titleLbl.Text = "🔍 REMOTES: " .. #found .. " found"
+titleLbl.TextColor3 = Color3.fromRGB(0, 255, 100)
+titleLbl.TextScaled = true
+titleLbl.Font = Enum.Font.GothamBold
+titleLbl.TextXAlignment = Enum.TextXAlignment.Left
+
+-- Copy ALL button
+local copyBtn = Instance.new("TextButton", titleBar)
+copyBtn.Size = UDim2.new(0, 60, 0, 22)
+copyBtn.Position = UDim2.new(1, -88, 0.5, -11)
+copyBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 220)
+copyBtn.Text = "COPY ALL"
+copyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+copyBtn.TextScaled = true
+copyBtn.Font = Enum.Font.GothamBold
+Instance.new("UICorner", copyBtn).CornerRadius = UDim.new(0, 6)
+
+-- Close button
+local closeBtn = Instance.new("TextButton", titleBar)
+closeBtn.Size = UDim2.new(0, 24, 0, 22)
+closeBtn.Position = UDim2.new(1, -26, 0.5, -11)
+closeBtn.BackgroundColor3 = Color3.fromRGB(200, 40, 40)
+closeBtn.Text = "✕"
+closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+closeBtn.TextScaled = true
+closeBtn.Font = Enum.Font.GothamBold
+Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 6)
+
+-- Scroll list
+local scroll = Instance.new("ScrollingFrame", win)
+scroll.Size = UDim2.new(1, -10, 1, -42)
+scroll.Position = UDim2.new(0, 5, 0, 37)
+scroll.BackgroundTransparency = 1
+scroll.ScrollBarThickness = 5
+scroll.ScrollBarImageColor3 = Color3.fromRGB(80, 80, 80)
+scroll.CanvasSize = UDim2.new(0, 0, 0, #found * 22 + 10)
+scroll.BorderSizePixel = 0
+
+local layout = Instance.new("UIListLayout", scroll)
+layout.SortOrder = Enum.SortOrder.LayoutOrder
+layout.Padding = UDim.new(0, 2)
+
+for i, line in ipairs(found) do
+    local row = Instance.new("Frame", scroll)
+    row.Size = UDim2.new(1, 0, 0, 20)
+    row.BackgroundColor3 = i % 2 == 0 and Color3.fromRGB(22, 22, 22) or Color3.fromRGB(28, 28, 28)
+    row.BorderSizePixel = 0
+    row.LayoutOrder = i
+
+    local lbl = Instance.new("TextLabel", row)
+    lbl.Size = UDim2.new(1, -50, 1, 0)
+    lbl.Position = UDim2.new(0, 4, 0, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = i .. ". " .. line
+    lbl.TextColor3 = Color3.fromRGB(210, 210, 210)
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.TextSize = 12
+    lbl.Font = Enum.Font.Gotham
+    lbl.TextTruncate = Enum.TextTruncate.AtEnd
+
+    -- Per-row copy button
+    local rowCopy = Instance.new("TextButton", row)
+    rowCopy.Size = UDim2.new(0, 44, 0, 16)
+    rowCopy.Position = UDim2.new(1, -46, 0.5, -8)
+    rowCopy.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    rowCopy.Text = "copy"
+    rowCopy.TextColor3 = Color3.fromRGB(180, 180, 180)
+    rowCopy.TextSize = 11
+    rowCopy.Font = Enum.Font.Gotham
+    Instance.new("UICorner", rowCopy).CornerRadius = UDim.new(0, 4)
+
+    local rawLine = line -- capture
+    rowCopy.MouseButton1Click:Connect(function()
+        pcall(function() setclipboard(rawLine) end)
+        rowCopy.Text = "✓"
+        rowCopy.TextColor3 = Color3.fromRGB(0, 255, 100)
+        task.delay(1.5, function()
+            rowCopy.Text = "copy"
+            rowCopy.TextColor3 = Color3.fromRGB(180, 180, 180)
+        end)
+    end)
+end
+
+-- COPY ALL logic
+copyBtn.MouseButton1Click:Connect(function()
+    local all = table.concat(found, "\n")
+    pcall(function() setclipboard(all) end)
+    copyBtn.Text = "✓ COPIED"
+    copyBtn.BackgroundColor3 = Color3.fromRGB(0, 160, 60)
+    task.delay(2, function()
+        copyBtn.Text = "COPY ALL"
+        copyBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 220)
+    end)
 end)
 
-local function setStatus(message)
-    status.Text = "Discord: discord.gg/aBq4NTkMyP\nStatus: " .. message
-end
-
--- HOP SERVER
-local function hopServer()
-    setStatus("Hopping server...")
-    if queue_on_teleport then
-        queue_on_teleport([[
-            loadstring(game:HttpGet("]] .. SCRIPT_URL .. [["))()
-        ]])
-    end
-    local ok, servers = pcall(function()
-        return HttpService:JSONDecode(
-            game:HttpGet(
-                "https://games.roblox.com/v1/games/"
-                .. game.PlaceId
-                .. "/servers/Public?sortOrder=Asc&limit=100"
-            )
-        )
-    end)
-    if ok and servers and servers.data then
-        for _, s in ipairs(servers.data) do
-            if s.playing < s.maxPlayers and s.id ~= game.JobId then
-                pcall(function()
-                    TeleportService:TeleportToPlaceInstance(game.PlaceId, s.id, player)
-                end)
-                return
-            end
-        end
-    end
-    pcall(function()
-        TeleportService:Teleport(game.PlaceId, player)
-    end)
-end
-
-local hopStart = tick()
-local noDoorSince = tick()
-local candyHoldUntil = 0
-
--- STATE
-local doorCooldownUntil = 0
-local lastDoorPrompt = nil
-local lastCandyPosition = nil
-local badPrompts = {}
-
-local function isBusy(character)
-    return character:FindFirstChild("RootAnchor") ~= nil
-        or character:FindFirstChild("NoRotate") ~= nil
-end
-
-local function getCandyPosition(candy)
-    local rest = candy:GetAttribute("Rest")
-    if typeof(rest) == "CFrame" then
-        return rest.Position
-    elseif typeof(rest) == "Vector3" then
-        return rest
-    end
-    return nil
-end
-
-local function findClosestCandy(root)
-    local closestPosition = nil
-    local closestDistance = math.huge
-    for _, candy in ipairs(folder:GetChildren()) do
-        local position = getCandyPosition(candy)
-        if position then
-            local distance = (root.Position - position).Magnitude
-            if distance < closestDistance then
-                closestDistance = distance
-                closestPosition = position
-            end
-        end
-    end
-    return closestPosition
-end
-
-local function findClosestDoor(root, ignoredPrompt)
-    local closestPrompt = nil
-    local closestPart = nil
-    local closestTree = nil
-    local closestDistance = math.huge
-
-    for _, tree in ipairs(trees:GetChildren()) do
-        local door = tree:FindFirstChild("DOOR 1 NEW")
-        local frame = door and door:FindFirstChild("Frame")
-        local prompt = frame and frame:FindFirstChild("TrickOrTreat")
-
-        if prompt
-            and prompt:IsA("ProximityPrompt")
-            and prompt ~= ignoredPrompt
-            and not badPrompts[prompt] then
-
-            local parent = prompt.Parent
-            local part = parent
-            if parent and parent:IsA("Attachment") then
-                part = parent.Parent
-            end
-
-            if part and part:IsA("BasePart") then
-                local distance = (root.Position - part.Position).Magnitude
-                if distance < closestDistance then
-                    closestDistance = distance
-                    closestPrompt = prompt
-                    closestPart = part
-                    closestTree = tree
-                end
-            end
-        end
-    end
-    return closestPrompt, closestPart, closestTree
-end
-
-local function getDoorPosition(tree, part, root, humanoid)
-    local boxCFrame
-    local boxSize
-
-    if tree:IsA("Model") then
-        boxCFrame, boxSize = tree:GetBoundingBox()
-    elseif tree:IsA("BasePart") then
-        boxCFrame = tree.CFrame
-        boxSize = tree.Size
-    else
-        return part.Position + Vector3.new(0, 3, 0)
-    end
-
-    local center = boxCFrame.Position
-    local direction = Vector3.new(
-        part.Position.X - center.X,
-        0,
-        part.Position.Z - center.Z
-    )
-    if direction.Magnitude < 0.1 then
-        direction = Vector3.new(0, 0, 1)
-    end
-    direction = direction.Unit
-
-    local doorDistance = Vector3.new(
-        part.Position.X - center.X,
-        0,
-        part.Position.Z - center.Z
-    ).Magnitude
-
-    local standDistance = math.max(TREE_STAND_DISTANCE, doorDistance + 2)
-    local position = center + direction * standDistance
-    local groundY = boxCFrame.Position.Y - boxSize.Y / 2
-    local height = humanoid.HipHeight + root.Size.Y / 2
-    position = Vector3.new(
-        position.X,
-        groundY + height + 0.25,
-        position.Z
-    )
-
-    return CFrame.lookAt(
-        position,
-        Vector3.new(part.Position.X, position.Y, part.Position.Z)
-    )
-end
-
--- AIM CAM VÀO PART
-local function aimCameraAt(targetPart)
-    local cam = workspace.CurrentCamera
-    if not cam or not targetPart then return nil end
-    local saved = {
-        type = cam.CameraType,
-        subject = cam.CameraSubject,
-        cframe = cam.CFrame,
-    }
-    pcall(function()
-        cam.CameraType = Enum.CameraType.Scriptable
-        cam.CameraSubject = nil
-        cam.CFrame = CFrame.lookAt(cam.CFrame.Position, targetPart.Position)
-    end)
-    return saved
-end
-
-local function restoreCamera(saved)
-    local cam = workspace.CurrentCamera
-    if not cam or not saved then return end
-    pcall(function()
-        cam.CameraType = saved.type
-        cam.CameraSubject = saved.subject
-        cam.CFrame = saved.cframe
-    end)
-end
-
--- KNOCK DOOR: aim cam + hold + fallback fireproximityprompt
-local function knockDoor(prompt, part, tree, character, root, humanoid)
-    local targetCFrame = getDoorPosition(tree, part, root, humanoid)
-    root.CFrame = targetCFrame
-    root.AssemblyLinearVelocity = Vector3.zero
-
-    task.wait(DOOR_POST_TP_WAIT)
-
-    local savedCam = aimCameraAt(part)
-    task.wait(CAM_AIM_WAIT)
-
-    local fired = false
-
-    for attempt = 1, DOOR_FIRE_RETRIES do
-        if humanoid.Health <= 0 then break end
-        if not prompt.Parent then fired = true; break end
-        if isBusy(character) then fired = true; break end
-
-        -- tầng 1: hold input giống người chơi
-        local held = pcall(function()
-            prompt:InputHoldBegin()
-        end)
-        if held then
-            local holdTime = prompt.HoldDuration
-            if holdTime and holdTime > 0 then
-                task.wait(holdTime + 0.05)
-            else
-                task.wait(0.08)
-            end
-            pcall(function()
-                prompt:InputHoldEnd()
-            end)
-        end
-
-        -- đợi kết quả
-        local waited = 0
-        while waited < DOOR_BUSY_WAIT do
-            task.wait(DOOR_FIRE_GAP)
-            waited = waited + DOOR_FIRE_GAP
-            if isBusy(character) then fired = true; break end
-            if not prompt.Parent then fired = true; break end
-        end
-        if fired then break end
-
-        -- tầng 2: fireproximityprompt
-        pcall(function()
-            fireproximityprompt(prompt)
-        end)
-        task.wait(0.15)
-        if isBusy(character) or not prompt.Parent then
-            fired = true
-            break
-        end
-    end
-
-    restoreCamera(savedCam)
-    return fired
-end
-
--- MAIN LOOP
-while task.wait(LOOP_DELAY) do
-    if tick() - hopStart >= HOP_INTERVAL then
-        hopServer()
-        return
-    end
-
-    local character = player.Character
-    local root = character and character:FindFirstChild("HumanoidRootPart")
-    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-
-    if not root or not humanoid then
-        setStatus("Waiting for character...")
-        noDoorSince = tick()
-        continue
-    end
-
-    if humanoid.Health <= 0 then
-        setStatus("Character dead...")
-        lastCandyPosition = nil
-        noDoorSince = tick()
-        continue
-    end
-
-    if isBusy(character) then
-        setStatus("Knocking on door...")
-        noDoorSince = tick()
-        continue
-    end
-
-    if os.clock() < doorCooldownUntil then
-        local remaining = math.ceil(doorCooldownUntil - os.clock())
-        setStatus("Waiting after knocking... " .. remaining .. "s")
-        noDoorSince = tick()
-        continue
-    end
-
-    if tick() < candyHoldUntil then
-        setStatus("Door in progress - holding...")
-        noDoorSince = tick()
-        continue
-    end
-
-    local closestCandy = findClosestCandy(root)
-
-    if closestCandy then
-        noDoorSince = tick()
-        setStatus("Collecting candy...")
-        local sameCandy = lastCandyPosition
-            and (lastCandyPosition - closestCandy).Magnitude < 1
-        if not sameCandy or (root.Position - closestCandy).Magnitude > 8 then
-            root.CFrame = CFrame.new(closestCandy + Vector3.new(0, CANDY_HEIGHT, 0))
-            root.AssemblyLinearVelocity = Vector3.zero
-            lastCandyPosition = closestCandy
-        end
-        continue
-    end
-
-    lastCandyPosition = nil
-
-    local prompt, part, tree = findClosestDoor(root, lastDoorPrompt)
-    if not prompt then
-        prompt, part, tree = findClosestDoor(root, nil)
-    end
-
-    if prompt and part and tree then
-        noDoorSince = tick()
-        setStatus("Visiting next door...")
-
-        candyHoldUntil = tick() + DOOR_WAIT_TIME + DOOR_BUSY_WAIT + 1
-
-        local success = knockDoor(prompt, part, tree, character, root, humanoid)
-
-        if success then
-            lastDoorPrompt = prompt
-            doorCooldownUntil = os.clock() + DOOR_WAIT_TIME
-            setStatus("Door knocked! Waiting 3 seconds...")
-        else
-            badPrompts[prompt] = true
-            setStatus("Door failed - skipping...")
-        end
-    else
-        local idle = tick() - noDoorSince
-        if idle >= NO_DOOR_HOP_TIME then
-            setStatus("No door " .. math.floor(idle) .. "s - hopping...")
-            hopServer()
-            return
-        end
-        setStatus("No candy - No doors (" .. string.format("%.1f", idle) .. "/3s)")
-        task.wait(0.5)
-    end
-end
+closeBtn.MouseButton1Click:Connect(function() gui:Destroy() end)
