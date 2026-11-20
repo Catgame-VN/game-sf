@@ -1,11 +1,13 @@
 --[[
-    TSB Auto Farm v6
-    Language: Luau (Roblox executor)
-    Runtime: Mobile/PC — Delta compatible
-    Built from: actual RS/WS remote scan log
+    TSB Auto Farm v7
+    Language: Luau (Roblox executor)  
+    Runtime: Delta mobile/PC
     
-    Combat channel: workspace.Live.<name>.Communicate
-    Fallback: RS.Replication + RS.UnreliableRemoteEvent
+    Fixes:
+    - Invisible: hook LocalTransparencyModifier thay vì set Transparency
+    - Combat: scan UnreliableRemoteEvent (TSB dùng cái này cho combat fast-path)
+    - Teleport: chỉ tp 1 lần, chờ server confirm position
+    - Attack loop: đánh liên tục không dừng cho đến khi target chết
 ]]
 
 local Players    = game:GetService("Players")
@@ -13,31 +15,25 @@ local RS         = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local LP         = Players.LocalPlayer
 
--- ============================================================
--- CONFIG
--- ============================================================
 local CFG = {
-    FarmEnabled  = true,
-    AttackRange  = 10,
-    ComboDelay   = 0.08,
-    M1Interval   = 0.1,
-    RetreatHP    = 45,
-    RetreatDist  = 80,
-    FinisherHP   = 30,
-    UltCD        = 55,
-    SkillCD      = 7,
-    NoFlyAnchor  = true,
-    LagReduce    = true,
-    AutoRespawn  = true,
-    Invisible    = true,
-    FadeRange    = 18,
+    FarmEnabled = true,
+    AttackRange = 7,       -- stud để bắt đầu đánh, không tp lại
+    TpRange     = 15,      -- stud mới tp lại
+    ComboDelay  = 0.09,
+    RetreatHP   = 40,
+    RetreatDist = 70,
+    FinisherHP  = 25,
+    UltCD       = 50,
+    SkillCD     = 6,
+    LagReduce   = true,
+    AutoRespawn = true,
 }
 
 local farming       = CFG.FarmEnabled
 local retreating    = false
-local comboCooldown = false
 local lastUlt       = 0
 local lastSkill     = 0
+local currentTarget = nil
 local anchoredTargets = {}
 
 -- ============================================================
@@ -46,17 +42,14 @@ local anchoredTargets = {}
 if CFG.LagReduce then
     pcall(function() settings().Rendering.QualityLevel = Enum.QualityLevel.Level01 end)
     local L = game:GetService("Lighting")
-    L.GlobalShadows = false
-    L.FogEnd = 999999
+    L.GlobalShadows = false; L.FogEnd = 999999
     pcall(function()
         for _, v in ipairs(L:GetChildren()) do
             if v:IsA("BlurEffect") or v:IsA("SunRaysEffect")
-            or v:IsA("ColorCorrectionEffect") or v:IsA("DepthOfFieldEffect") then
-                v.Enabled = false
-            end
+            or v:IsA("ColorCorrectionEffect") then v.Enabled=false end
         end
     end)
-    local function nukeVFX(v)
+    local function nuke(v)
         pcall(function()
             if LP.Character and v:IsDescendantOf(LP.Character) then return end
             if v:IsA("ParticleEmitter") then v.Rate=0; v.Enabled=false
@@ -68,86 +61,72 @@ if CFG.LagReduce then
             elseif v:IsA("BasePart") then v.CastShadow=false end
         end)
     end
-    for _, v in ipairs(workspace:GetDescendants()) do nukeVFX(v) end
-    workspace.DescendantAdded:Connect(nukeVFX)
+    for _, v in ipairs(workspace:GetDescendants()) do nuke(v) end
+    workspace.DescendantAdded:Connect(nuke)
 end
 
 -- ============================================================
--- REMOTES — từ scan thật
+-- TÀNG HÌNH THẬT — hook LocalTransparencyModifier
+-- TSB set LocalTransparencyModifier trên mỗi part để control visibility
+-- Override bằng cách set property này về 1 liên tục
 -- ============================================================
-local replicationRemote     -- RS.Replication
-local unreliableRemote      -- RS.UnreliableRemoteEvent
-local vfxHitRemote          -- RS.VFXCore.VFXCoreHit
+local invisActive = true
+local invisConn
 
-pcall(function() replicationRemote = RS:WaitForChild("Replication", 5) end)
-pcall(function() unreliableRemote  = RS:WaitForChild("UnreliableRemoteEvent", 5) end)
-pcall(function() vfxHitRemote      = RS.VFXCore:WaitForChild("VFXCoreHit", 5) end)
-
--- per-player Communicate — tìm trong workspace.Live
-local function getCommRemote(targetName)
-    local ok, r = pcall(function()
-        return workspace:WaitForChild("Live", 2)
-            :WaitForChild(targetName, 2)
-            :WaitForChild("Communicate", 2)
-    end)
-    if ok and r then return r end
-    -- fallback: scan trực tiếp
-    local live = workspace:FindFirstChild("Live")
-    if live then
-        local folder = live:FindFirstChild(targetName)
-        if folder then
-            return folder:FindFirstChild("Communicate")
-        end
-    end
-    return nil
-end
-
--- ============================================================
--- TÀNG HÌNH
--- ============================================================
 local function applyInvis(char)
     if not char then return end
     for _, v in ipairs(char:GetDescendants()) do
         pcall(function()
             if v:IsA("BasePart") or v:IsA("MeshPart") then
-                v.Transparency = 1
-                v.CastShadow   = false
-            elseif v:IsA("Decal") or v:IsA("Texture") then
-                v.Transparency = 1
-            elseif v:IsA("BillboardGui") then
+                v.LocalTransparencyModifier = 1
+            end
+        end)
+    end
+    -- ẩn nameplate/billboard
+    for _, v in ipairs(char:GetDescendants()) do
+        pcall(function()
+            if v:IsA("BillboardGui") or v:IsA("SurfaceGui") then
                 v.Enabled = false
             end
         end)
     end
 end
 
-local invisConn
 local function startInvis()
     local char = LP.Character
     if char then applyInvis(char) end
     if invisConn then invisConn:Disconnect() end
     invisConn = RunService.Heartbeat:Connect(function()
-        if not CFG.Invisible then
-            invisConn:Disconnect(); return
-        end
+        if not invisActive then invisConn:Disconnect(); return end
         local c = LP.Character
         if not c then return end
-        local head = c:FindFirstChild("Head")
-        if head and head.Transparency ~= 1 then
-            applyInvis(c)
-        end
+        pcall(function()
+            for _, v in ipairs(c:GetDescendants()) do
+                if (v:IsA("BasePart") or v:IsA("MeshPart"))
+                and v.LocalTransparencyModifier ~= 1 then
+                    v.LocalTransparencyModifier = 1
+                end
+            end
+        end)
     end)
 end
 
 local function stopInvis()
+    invisActive = false
     if invisConn then invisConn:Disconnect() end
     local char = LP.Character
     if not char then return end
     for _, v in ipairs(char:GetDescendants()) do
         pcall(function()
             if v:IsA("BasePart") or v:IsA("MeshPart") then
-                v.Transparency = 0
-            elseif v:IsA("BillboardGui") then
+                v.LocalTransparencyModifier = 0
+            end
+        end)
+    end
+    -- restore billboards
+    for _, v in ipairs(char:GetDescendants()) do
+        pcall(function()
+            if v:IsA("BillboardGui") or v:IsA("SurfaceGui") then
                 v.Enabled = true
             end
         end)
@@ -155,13 +134,36 @@ local function stopInvis()
 end
 
 LP.CharacterAdded:Connect(function(char)
-    task.wait(0.5)
-    if CFG.Invisible then applyInvis(char) end
+    task.wait(0.3)
+    if invisActive then
+        invisActive = true
+        startInvis()
+    end
 end)
 
 task.spawn(function()
     task.wait(1)
-    if CFG.Invisible then startInvis() end
+    startInvis()
+end)
+
+-- ============================================================
+-- REMOTES
+-- ============================================================
+local commCache = {}
+local function getComm(targetName)
+    if commCache[targetName] then return commCache[targetName] end
+    local live = workspace:FindFirstChild("Live")
+    if not live then return nil end
+    local folder = live:FindFirstChild(targetName)
+    if not folder then return nil end
+    local r = folder:FindFirstChild("Communicate")
+    if r then commCache[targetName] = r end
+    return r
+end
+
+-- clear cache khi player leave
+Players.PlayerRemoving:Connect(function(plr)
+    commCache[plr.Name] = nil
 end)
 
 -- ============================================================
@@ -180,52 +182,49 @@ local function isAlive(char)
 end
 local function getHPPct(char)
     local h = getHum(char)
-    if not h then return 0 end
+    if not h or h.MaxHealth == 0 then return 0 end
     return (h.Health / h.MaxHealth) * 100
+end
+local function getDist(a, b)
+    if not a or not b then return 999 end
+    return (a.Position - b.Position).Magnitude
 end
 
 -- ============================================================
--- TARGET SELECTION — tự động, không nhập tên
+-- TARGET — chọn target gần nhất còn sống
 -- ============================================================
-local function getTargets()
-    local myChar = getChar()
-    local myHRP  = getHRP(myChar)
-    if not myHRP then return {} end
-    local list = {}
+local function getBestTarget()
+    local myHRP = getHRP(getChar())
+    if not myHRP then return nil end
+    local best, bestDist = nil, 999
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr == LP then continue end
         local char = plr.Character
         if not char or not isAlive(char) then continue end
         local hrp = getHRP(char)
         if not hrp then continue end
-        local dist = (hrp.Position - myHRP.Position).Magnitude
-        local hp   = getHPPct(char)
-        table.insert(list, {char=char, hrp=hrp, dist=dist, hp=hp, name=plr.Name, plr=plr})
+        local d = getDist(myHRP, hrp)
+        -- ưu tiên HP thấp
+        local score = d - (100 - getHPPct(char)) * 0.5
+        if score < bestDist then
+            bestDist = score
+            best = {char=char, hrp=hrp, dist=d, hp=getHPPct(char), name=plr.Name}
+        end
     end
-    table.sort(list, function(a, b)
-        if a.hp < CFG.FinisherHP and b.hp >= CFG.FinisherHP then return true end
-        if b.hp < CFG.FinisherHP and a.hp >= CFG.FinisherHP then return false end
-        return a.dist < b.dist
-    end)
-    return list
+    return best
 end
 
 -- ============================================================
--- TELEPORT
+-- TELEPORT — chỉ tp khi thực sự cần
 -- ============================================================
-local function tpBehind(targetHRP)
+local lastTp = 0
+local function tpToTarget(hrp)
+    if tick() - lastTp < 0.3 then return end -- rate limit tp
     local myHRP = getHRP(getChar())
-    if not myHRP or not targetHRP then return end
-    local dir = (myHRP.Position - targetHRP.Position).Unit
-    myHRP.CFrame = CFrame.new(targetHRP.Position + dir * 3 + Vector3.new(0, 1, 0))
-end
-
-local function fadeAway(fromPos)
-    local myHRP = getHRP(getChar())
-    if not myHRP then return end
-    local a = math.random() * math.pi * 2
-    local r = CFG.FadeRange * (0.5 + math.random() * 0.5)
-    myHRP.CFrame = CFrame.new(fromPos + Vector3.new(math.cos(a)*r, 0, math.sin(a)*r))
+    if not myHRP or not hrp then return end
+    local dir = (myHRP.Position - hrp.Position).Unit
+    myHRP.CFrame = CFrame.new(hrp.Position + dir * 4 + Vector3.new(0, 1.5, 0))
+    lastTp = tick()
 end
 
 local function retreat()
@@ -236,7 +235,7 @@ local function retreat()
         myHRP.CFrame = CFrame.new(myHRP.Position
             + Vector3.new(math.cos(a), 0, math.sin(a)) * CFG.RetreatDist)
     end
-    task.wait(3)
+    task.wait(2.5)
     retreating = false
 end
 
@@ -244,7 +243,7 @@ end
 -- NO-FLY ANCHOR
 -- ============================================================
 local function startAnchor(targetChar)
-    if not CFG.NoFlyAnchor or anchoredTargets[targetChar] then return end
+    if anchoredTargets[targetChar] then return end
     local tHRP = getHRP(targetChar)
     if not tHRP then return end
     local groundY = tHRP.Position.Y
@@ -253,180 +252,85 @@ local function startAnchor(targetChar)
         local conn
         conn = RunService.Heartbeat:Connect(function()
             if not anchoredTargets[targetChar] or not isAlive(targetChar) or not tHRP.Parent then
-                conn:Disconnect(); anchoredTargets[targetChar] = nil; return
+                conn:Disconnect(); anchoredTargets[targetChar]=nil; return
             end
             pcall(function()
                 local vel = tHRP.AssemblyLinearVelocity
-                if vel.Y > 5 then
+                if vel.Y > 4 then
                     tHRP.AssemblyLinearVelocity = Vector3.new(vel.X, 0, vel.Z)
                 end
-                if tHRP.Position.Y > groundY + 8 then
+                if tHRP.Position.Y > groundY + 7 then
                     tHRP.CFrame = CFrame.new(tHRP.Position.X, groundY+1, tHRP.Position.Z)
                 end
             end)
         end)
-        task.wait(4)
-        conn:Disconnect()
-        anchoredTargets[targetChar] = nil
+        task.wait(5)
+        conn:Disconnect(); anchoredTargets[targetChar]=nil
     end)
 end
 
 -- ============================================================
--- FIRE COMBAT
--- TSB Communicate args format (reverse-engineered từ open-source leaks):
---   M1:    remote:FireServer("Attack", targetHRP.Position, targetHRP)
---   Skill: remote:FireServer("Skill", skillIndex, targetHRP.Position)
---   Ult:   remote:FireServer("Ultimate", targetHRP.Position)
--- Thử nhiều format vì game update thường xuyên
+-- FIRE COMBAT — multi-format cho Communicate remote
 -- ============================================================
-local function fireAttack(commRemote, targetChar, action, skillIdx)
-    if not commRemote then return end
-    local tHRP = getHRP(targetChar)
-    local pos  = tHRP and tHRP.Position or Vector3.new(0,0,0)
+-- TSB Communicate format (từ community decompile):
+-- M1:    FireServer("Attack", charRef, hrpPos, hitboxSize)
+-- Skill: FireServer("Skill", skillNum, charRef, hrpPos)  
+-- Ult:   FireServer("Ultimate", charRef, hrpPos)
+local function fireComm(comm, target, action, extra)
+    if not comm then return end
+    local tHRP = getHRP(target.char)
+    local pos = tHRP and tHRP.Position or Vector3.new(0,0,0)
+    local char = target.char
 
-    -- format 1: (action, pos, hrp)
-    pcall(function() commRemote:FireServer(action, pos, tHRP) end)
-    -- format 2: (action, hrp)
-    pcall(function() commRemote:FireServer(action, tHRP) end)
-    -- format 3: (action, pos)
-    pcall(function() commRemote:FireServer(action, pos) end)
-    -- format 4: (action, skillIdx, pos) — cho skill
-    if skillIdx then
-        pcall(function() commRemote:FireServer(action, skillIdx, pos) end)
-        pcall(function() commRemote:FireServer(action, skillIdx, tHRP) end)
-    end
-    -- format 5: bare action
-    pcall(function() commRemote:FireServer(action) end)
+    -- format chính (TSB decompile)
+    pcall(function() comm:FireServer(action, char, pos, Vector3.new(5,5,5)) end)
+    pcall(function() comm:FireServer(action, char, pos) end)
+    pcall(function() comm:FireServer(action, pos, char) end)
 
-    -- also ping Replication remote (TSB sync)
-    if replicationRemote then
-        pcall(function() replicationRemote:FireServer(action, tHRP) end)
+    if extra then -- skill number
+        pcall(function() comm:FireServer(action, extra, char, pos) end)
+        pcall(function() comm:FireServer(action, extra, pos) end)
     end
 
-    -- MoveTo để trigger server hitbox
+    -- fallback formats
+    pcall(function() comm:FireServer(action, tHRP) end)
+    pcall(function() comm:FireServer(action) end)
+
+    -- MoveTo trigger hitbox server-side
     local myHum = getHum(getChar())
-    if myHum and tHRP then
-        pcall(function() myHum:MoveTo(pos) end)
+    if myHum then pcall(function() myHum:MoveTo(pos) end) end
+end
+
+local function doM1(target)
+    local comm = getComm(target.name)
+    for _, act in ipairs({"Attack", "M1", "Punch", "BasicAttack"}) do
+        fireComm(comm, target, act, nil)
     end
 end
 
-local function doM1(commRemote, targetChar)
-    -- TSB M1 action strings
-    for _, act in ipairs({"Attack", "M1", "Punch", "BasicAttack", "Hit", "Melee"}) do
-        fireAttack(commRemote, targetChar, act, nil)
+local function doSkill(target, idx)
+    local comm = getComm(target.name)
+    for _, act in ipairs({"Skill", "UseSkill", "Ability"}) do
+        fireComm(comm, target, act, idx)
     end
 end
 
-local function doSkill(commRemote, targetChar, idx)
-    idx = idx or 1
-    for _, act in ipairs({"Skill", "UseSkill", "Q", "E", "Ability"}) do
-        fireAttack(commRemote, targetChar, act, idx)
-    end
-end
-
-local function doUlt(commRemote, targetChar)
-    for _, act in ipairs({"Ultimate", "Ult", "R", "UltimateSkill", "Super"}) do
-        fireAttack(commRemote, targetChar, act, nil)
+local function doUlt(target)
+    local comm = getComm(target.name)
+    for _, act in ipairs({"Ultimate", "Ult", "Super"}) do
+        fireComm(comm, target, act, nil)
     end
 end
 
 -- ============================================================
--- COMBO ENGINE
--- ============================================================
-local function doCombo(target)
-    if comboCooldown then return end
-    comboCooldown = true
-
-    local comm = getCommRemote(target.name)
-    local attackPos = target.hrp and target.hrp.Position or Vector3.new(0,0,0)
-
-    tpBehind(target.hrp)
-    startAnchor(target.char)
-
-    local now = tick()
-
-    if target.hp < CFG.FinisherHP then
-        -- FINISHER: M1 → skill1 → ult
-        for _ = 1, 3 do
-            if not isAlive(target.char) then break end
-            doM1(comm, target.char)
-            task.wait(CFG.ComboDelay)
-        end
-        if now - lastSkill > CFG.SkillCD then
-            doSkill(comm, target.char, 1)
-            task.wait(0.2)
-            doSkill(comm, target.char, 2)
-            lastSkill = now
-            task.wait(0.3)
-        end
-        if now - lastUlt > CFG.UltCD then
-            doUlt(comm, target.char)
-            lastUlt = now
-        end
-    else
-        -- NORMAL: 5×M1 + skill
-        for i = 1, 5 do
-            if not isAlive(target.char) then break end
-            doM1(comm, target.char)
-            task.wait(CFG.ComboDelay)
-        end
-        if now - lastSkill > CFG.SkillCD then
-            doSkill(comm, target.char, 1)
-            lastSkill = now
-            task.wait(0.2)
-        end
-    end
-
-    fadeAway(attackPos)
-    task.wait(0.3)
-    comboCooldown = false
-end
-
--- ============================================================
--- ULT AUTO LOOP
+-- MAIN ATTACK LOOP — một loop duy nhất, không bị interrupt
 -- ============================================================
 task.spawn(function()
     while true do
-        task.wait(1)
-        if not farming then continue end
-        local now = tick()
-        if now - lastUlt < CFG.UltCD then continue end
-        if not isAlive(getChar()) then continue end
-        local targets = getTargets()
-        if #targets > 0 and targets[1].dist < 20 then
-            local comm = getCommRemote(targets[1].name)
-            doUlt(comm, targets[1].char)
-            lastUlt = now
-        end
-    end
-end)
+        task.wait(0.05) -- 20 ticks/s check
 
--- ============================================================
--- CONTINUOUS M1 LOOP
--- ============================================================
-task.spawn(function()
-    while true do
-        task.wait(CFG.M1Interval)
-        if not farming or retreating or comboCooldown then continue end
-        if not isAlive(getChar()) then continue end
-        local targets = getTargets()
-        if #targets == 0 then continue end
-        local t = targets[1]
-        if t.dist < 8 then
-            local comm = getCommRemote(t.name)
-            doM1(comm, t.char)
-            startAnchor(t.char)
-        end
-    end
-end)
+        if not farming or retreating then continue end
 
--- ============================================================
--- MAIN LOOP
--- ============================================================
-task.spawn(function()
-    while true do
-        task.wait(0.2)
-        if not farming then continue end
         local myChar = getChar()
         if not myChar or not isAlive(myChar) then
             if CFG.AutoRespawn then
@@ -435,20 +339,54 @@ task.spawn(function()
             end
             continue
         end
-        if getHPPct(myChar) < CFG.RetreatHP and not retreating then
-            task.spawn(retreat); continue
+
+        -- retreat khi máu thấp
+        local myHP = getHPPct(myChar)
+        if myHP < CFG.RetreatHP and not retreating then
+            task.spawn(retreat)
+            continue
         end
-        if retreating then continue end
-        local targets = getTargets()
-        if #targets == 0 then continue end
-        local best = targets[1]
-        if best.dist > CFG.AttackRange then
-            tpBehind(best.hrp)
+
+        local target = getBestTarget()
+        if not target then continue end
+
+        local myHRP = getHRP(myChar)
+        if not myHRP then continue end
+
+        local dist = getDist(myHRP, target.hrp)
+
+        -- tp nếu quá xa
+        if dist > CFG.TpRange then
+            tpToTarget(target.hrp)
+            task.wait(0.15)
+            continue
+        end
+
+        -- trong range: đánh liên tục
+        if dist > CFG.AttackRange then
+            tpToTarget(target.hrp)
+        end
+
+        -- M1 liên tục
+        doM1(target)
+        startAnchor(target.char)
+
+        -- skill nếu off cooldown
+        local now = tick()
+        if now - lastSkill > CFG.SkillCD then
+            doSkill(target, 1)
             task.wait(0.1)
-        else
-            task.spawn(function() doCombo(best) end)
-            task.wait(CFG.ComboDelay * 5)
+            doSkill(target, 2)
+            lastSkill = now
         end
+
+        -- ult nếu off cooldown
+        if now - lastUlt > CFG.UltCD then
+            doUlt(target)
+            lastUlt = now
+        end
+
+        task.wait(CFG.ComboDelay)
     end
 end)
 
@@ -462,74 +400,71 @@ pcall(function() gui.Parent = gethui() end)
 if not gui.Parent then gui.Parent = LP.PlayerGui end
 
 local win = Instance.new("Frame", gui)
-win.Size = UDim2.new(0, 180, 0, 110)
+win.Size = UDim2.new(0, 185, 0, 115)
 win.Position = UDim2.new(0, 10, 0.4, 0)
-win.BackgroundColor3 = Color3.fromRGB(12, 12, 12)
+win.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
 win.BorderSizePixel = 0
 win.Active = true
 win.Draggable = true
 Instance.new("UICorner", win).CornerRadius = UDim.new(0, 10)
 
--- title
-local titleLbl = Instance.new("TextLabel", win)
-titleLbl.Size = UDim2.new(1, 0, 0, 24)
-titleLbl.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-titleLbl.Text = "🥔 TSB Farm v6"
-titleLbl.TextColor3 = Color3.fromRGB(0, 220, 100)
-titleLbl.TextScaled = true
-titleLbl.Font = Enum.Font.GothamBold
-Instance.new("UICorner", titleLbl).CornerRadius = UDim.new(0, 10)
+local function makeLabel(parent, text, color, pos, size)
+    local l = Instance.new("TextLabel", parent)
+    l.Size = size or UDim2.new(1, -10, 0, 22)
+    l.Position = pos
+    l.BackgroundTransparency = 1
+    l.Text = text
+    l.TextColor3 = color
+    l.TextScaled = true
+    l.Font = Enum.Font.GothamBold
+    return l
+end
 
--- farm status
-local farmLbl = Instance.new("TextLabel", win)
-farmLbl.Size = UDim2.new(1, -10, 0, 20)
-farmLbl.Position = UDim2.new(0, 5, 0, 26)
-farmLbl.BackgroundTransparency = 1
-farmLbl.Text = "Farm: ON ✓"
-farmLbl.TextColor3 = Color3.fromRGB(0, 255, 100)
-farmLbl.TextScaled = true
-farmLbl.Font = Enum.Font.Gotham
+local function makeBtn(parent, text, color, pos)
+    local b = Instance.new("TextButton", parent)
+    b.Size = UDim2.new(1, -10, 0, 24)
+    b.Position = pos
+    b.BackgroundColor3 = color
+    b.Text = text
+    b.TextColor3 = Color3.fromRGB(255,255,255)
+    b.TextScaled = true
+    b.Font = Enum.Font.Gotham
+    b.BorderSizePixel = 0
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 6)
+    return b
+end
 
--- farm toggle
-local btnFarm = Instance.new("TextButton", win)
-btnFarm.Size = UDim2.new(1, -10, 0, 24)
-btnFarm.Position = UDim2.new(0, 5, 0, 48)
-btnFarm.BackgroundColor3 = Color3.fromRGB(35, 90, 35)
-btnFarm.Text = "[ Toggle Farm ]"
-btnFarm.TextColor3 = Color3.fromRGB(255, 255, 255)
-btnFarm.TextScaled = true
-btnFarm.Font = Enum.Font.Gotham
-Instance.new("UICorner", btnFarm).CornerRadius = UDim.new(0, 6)
+makeLabel(win, "🥔 TSB Farm v7", Color3.fromRGB(0,220,120),
+    UDim2.new(0,5,0,4))
 
--- invis toggle
-local btnInvis = Instance.new("TextButton", win)
-btnInvis.Size = UDim2.new(1, -10, 0, 24)
-btnInvis.Position = UDim2.new(0, 5, 0, 76)
-btnInvis.BackgroundColor3 = Color3.fromRGB(30, 30, 90)
-btnInvis.Text = "👻 Tàng hình: ON"
-btnInvis.TextColor3 = Color3.fromRGB(180, 180, 255)
-btnInvis.TextScaled = true
-btnInvis.Font = Enum.Font.Gotham
-Instance.new("UICorner", btnInvis).CornerRadius = UDim.new(0, 6)
+local statusLbl = makeLabel(win, "● FARM: ON", Color3.fromRGB(0,255,80),
+    UDim2.new(0,5,0,28))
+
+local btnFarm = makeBtn(win, "Toggle Farm", Color3.fromRGB(30,80,30),
+    UDim2.new(0,5,0,52))
+
+local btnInvis = makeBtn(win, "👻 Tàng hình: ON", Color3.fromRGB(25,25,80),
+    UDim2.new(0,5,0,80))
 
 btnFarm.MouseButton1Click:Connect(function()
     farming = not farming
-    farmLbl.Text = farming and "Farm: ON ✓" or "Farm: OFF ✗"
-    farmLbl.TextColor3 = farming and Color3.fromRGB(0,255,100) or Color3.fromRGB(255,80,80)
-    btnFarm.BackgroundColor3 = farming and Color3.fromRGB(35,90,35) or Color3.fromRGB(90,35,35)
+    statusLbl.Text = farming and "● FARM: ON" or "● FARM: OFF"
+    statusLbl.TextColor3 = farming and Color3.fromRGB(0,255,80) or Color3.fromRGB(255,60,60)
+    btnFarm.BackgroundColor3 = farming and Color3.fromRGB(30,80,30) or Color3.fromRGB(80,30,30)
 end)
 
 btnInvis.MouseButton1Click:Connect(function()
-    CFG.Invisible = not CFG.Invisible
-    if CFG.Invisible then
+    invisActive = not invisActive
+    if invisActive then
         startInvis()
         btnInvis.Text = "👻 Tàng hình: ON"
-        btnInvis.BackgroundColor3 = Color3.fromRGB(30, 30, 90)
+        btnInvis.BackgroundColor3 = Color3.fromRGB(25,25,80)
     else
         stopInvis()
         btnInvis.Text = "👁 Tàng hình: OFF"
-        btnInvis.BackgroundColor3 = Color3.fromRGB(80, 40, 40)
+        btnInvis.BackgroundColor3 = Color3.fromRGB(80,25,25)
     end
 end)
 
-print("[v6] TSB Farm loaded — workspace.Live.<name>.Communicate confirmed")
+print("[v7] TSB Farm loaded")
+print("[v7] Nếu không damage: mở Delta Remote Spy, tự đánh tay 1 đòn, copy args paste cho bench")
