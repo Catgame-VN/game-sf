@@ -11,7 +11,7 @@ local trees = workspace:WaitForChild("HalloweenDoorTrees")
 local camera = workspace.CurrentCamera
 
 local HOP_INTERVAL = 15 * 60
-local SCRIPT_URL = "https://raw.githubusercontent.com/Catgame-VN/game-sf/refs/heads/main/tsb%20autof"
+local SCRIPT_URL = "https://raw.githubusercontent.com/Catgame-VN/game-sf/refs/heads/main/tsb%20autofarm"
 local MAX_LOG_LINES = 4
 
 -- STATE
