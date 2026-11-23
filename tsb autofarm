@@ -1,6 +1,6 @@
 --[[
 CatLazy Auto Candy
-v8: verify fire + retry + cooldown + ignore last door + busy timeout
+v7: glassmorphism UI + gradient + progress bar + smooth animations + "CatLazy Tool" toggle
 ]]
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
@@ -16,25 +16,11 @@ local HOP_INTERVAL = 15 * 60
 local SCRIPT_URL = "https://raw.githubusercontent.com/Catgame-VN/game-sf/refs/heads/main/tsb%20autofarm"
 local MAX_LOG_LINES = 4
 
--- DOOR SETTINGS
-local DOOR_POST_TP_WAIT = 0.45
-local DOOR_FIRE_RETRIES = 4
-local DOOR_FIRE_GAP = 0.2
-local DOOR_BUSY_WAIT = 1.5
-local DOOR_WAIT_TIME = 3
-local BUSY_TIMEOUT = 8
-
 -- STATE
 local currentAction = "Finding candy..."
 local hopStart = tick()
 local logLines = {}
 local guiVisible = true
-
--- door state
-local doorCooldownUntil = 0
-local lastDoorPrompt = nil
-local badPrompts = {}
-local busySince = nil
 
 local function addLog(msg)
     local t = os.date("%H:%M:%S")
@@ -97,6 +83,7 @@ panel.BackgroundTransparency = 0.08
 panel.BorderSizePixel = 0
 panel.ClipsDescendants = true
 panel.Active = true
+panel.Draggable = false
 panel.Parent = mainGui
 
 local panelCorner = Instance.new("UICorner")
@@ -117,6 +104,7 @@ panelStroke.Thickness = 1.5
 panelStroke.Transparency = 0.55
 panelStroke.Parent = panel
 
+-- shadow
 local shadow = Instance.new("ImageLabel")
 shadow.Name = "Shadow"
 shadow.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -164,6 +152,7 @@ local badgeCorner = Instance.new("UICorner")
 badgeCorner.CornerRadius = UDim.new(0, 6)
 badgeCorner.Parent = badge
 
+-- separator
 local sep1 = Instance.new("Frame")
 sep1.Size = UDim2.new(1, -32, 0, 1)
 sep1.Position = UDim2.new(0, 16, 0, 40)
@@ -207,6 +196,7 @@ statusText.Font = Enum.Font.GothamMedium
 statusText.TextXAlignment = Enum.TextXAlignment.Left
 statusText.Parent = statusRow
 
+-- pulse animation
 spawn(function()
     while mainGui.Parent do
         local tween = TweenService:Create(dotPulse, TweenInfo.new(0.9, Enum.EasingStyle.Sine), {
@@ -375,6 +365,7 @@ tStroke.Thickness = 1.5
 tStroke.Transparency = 0.7
 tStroke.Parent = toggleBtn
 
+-- button drag
 local bDragging, bStart, bStartPos
 toggleBtn.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1
@@ -458,10 +449,10 @@ local function refreshStatus()
     local logText = #logLines > 0 and table.concat(logLines, "\n") or "(no log yet)"
     logLabel.Text = logText
 
-    if currentAction:find("Hopping") or currentAction:find("dead") or currentAction:find("stuck") then
+    if currentAction:find("Hopping") or currentAction:find("dead") then
         statusDot.BackgroundColor3 = C.danger
         dotPulse.Color = C.danger
-    elseif currentAction:find("Waiting") or currentAction:find("Cooldown") then
+    elseif currentAction:find("Waiting") then
         statusDot.BackgroundColor3 = Color3.fromRGB(255, 200, 80)
         dotPulse.Color = Color3.fromRGB(255, 200, 80)
     else
@@ -540,9 +531,7 @@ local function findClosestDoor(root)
         local frame = door and door:FindFirstChild("Frame")
         local prompt = frame and frame:FindFirstChild("TrickOrTreat")
 
-        if prompt and prompt:IsA("ProximityPrompt")
-            and prompt ~= lastDoorPrompt
-            and not badPrompts[prompt] then
+        if prompt and prompt:IsA("ProximityPrompt") then
             local part = prompt.Parent
 
             if part and part:IsA("BasePart") then
@@ -560,45 +549,9 @@ local function findClosestDoor(root)
     return closestPrompt, closestPart
 end
 
--- ===== KNOCK DOOR =====
-local function knockDoor(prompt, part, character, root, humanoid)
-    -- teleport tới door
-    pcall(function()
-        root.CFrame = CFrame.new(part.Position + Vector3.new(0, 3, 0))
-    end)
-    root.AssemblyLinearVelocity = Vector3.zero
-
-    -- đợi server register vị trí
-    task.wait(DOOR_POST_TP_WAIT)
-
-    local fired = false
-    for attempt = 1, DOOR_FIRE_RETRIES do
-        if humanoid.Health <= 0 then return false end
-        if not prompt.Parent then fired = true; break end
-        if isBusy(character) then fired = true; break end
-
-        pcall(function()
-            fireproximityprompt(prompt)
-        end)
-
-        -- verify: busy bật / prompt disable / prompt bị destroy
-        local waited = 0
-        while waited < DOOR_BUSY_WAIT do
-            task.wait(DOOR_FIRE_GAP)
-            waited = waited + DOOR_FIRE_GAP
-            if isBusy(character) then fired = true; break end
-            if not prompt.Parent then fired = true; break end
-        end
-        if fired then break end
-    end
-
-    return fired
-end
-
 addLog("Loaded - hop every 15m")
 
 while task.wait() do
-    -- check hop interval
     if tick() - hopStart >= HOP_INTERVAL then
         hopServer("15m timer")
         return
@@ -610,47 +563,19 @@ while task.wait() do
 
     if not root or not humanoid then
         setStatus("Waiting for character...")
-        busySince = nil
         continue
     end
 
     if humanoid.Health <= 0 then
         setStatus("Character dead...")
-        busySince = nil
         continue
     end
 
-    -- check busy + timeout
     if isBusy(character) then
-        if not busySince then busySince = tick() end
-        local busyDur = tick() - busySince
-        if busyDur > BUSY_TIMEOUT then
-            setStatus("Door stuck - escaping...")
-            addLog("Busy " .. math.floor(busyDur) .. "s - teleport away")
-            -- nhảy ra xa để phá animation kẹt
-            pcall(function()
-                root.CFrame = root.CFrame + Vector3.new(0, 30, 0)
-            end)
-            task.wait(0.3)
-            busySince = nil
-            badPrompts[lastDoorPrompt] = true
-            lastDoorPrompt = nil
-        else
-            setStatus("Door... (" .. math.floor(busyDur) .. "s)")
-        end
-        continue
-    else
-        busySince = nil
-    end
-
-    -- check cooldown sau knock
-    if os.clock() < doorCooldownUntil then
-        local remaining = math.ceil(doorCooldownUntil - os.clock())
-        setStatus("Cooldown " .. remaining .. "s")
+        setStatus("Door...")
         continue
     end
 
-    -- tìm candy
     local closestCandy
     local closestDistance = math.huge
 
@@ -672,33 +597,17 @@ while task.wait() do
         root.CFrame = CFrame.new(closestCandy.Position + Vector3.new(0, 4, 0))
         humanoid.Jump = true
         humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-        continue
-    end
-
-    -- tìm door
-    local prompt, part = findClosestDoor(root)
-
-    -- nếu không còn door nào (do ignore + bad), reset ignore
-    if not prompt then
-        lastDoorPrompt = nil
-        prompt, part = findClosestDoor(root)
-    end
-
-    if prompt and part then
-        setStatus("Visiting door...")
-        local ok = knockDoor(prompt, part, character, root, humanoid)
-
-        if ok then
-            lastDoorPrompt = prompt
-            doorCooldownUntil = os.clock() + DOOR_WAIT_TIME
-            setStatus("Door knocked - waiting " .. DOOR_WAIT_TIME .. "s")
-        else
-            badPrompts[prompt] = true
-            addLog("Fire failed - skip door")
-            task.wait(0.3)
-        end
     else
-        setStatus("No candy - no doors")
-        root.CFrame = CFrame.new(0, 100, 0)
+        local prompt, part = findClosestDoor(root)
+
+        if prompt and part then
+            setStatus("Visiting door...")
+            humanoid.Jump = true
+            humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+            root.CFrame = part.CFrame
+            fireproximityprompt(prompt)
+        else
+            setStatus("No candy - no doors")
+            root.CFrame = CFrame.new(0, 100, 0)
+        end
     end
-end
