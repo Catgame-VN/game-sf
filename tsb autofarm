@@ -1,8 +1,6 @@
 --[[
-join my discord server: discord.gg/aBq4NTkMyP
-sub https://www.youtube.com/@Pwrt4XhkeBiz5zi1pD4j for more
-make by chatgpt in like 10 minutes xd
-v2: auto hop 15p + auto re-exec sau hop
+CatLazy Auto Candy
+v4: rebrand + toggle GUI (mobile-friendly)
 ]]
 local Players = game:GetService("Players")
 local TeleportService = game:GetService("TeleportService")
@@ -14,9 +12,31 @@ local camera = workspace.CurrentCamera
 
 local HOP_INTERVAL = 15 * 60
 local SCRIPT_URL = "https://raw.githubusercontent.com/Catgame-VN/game-sf/refs/heads/main/tsb%20autof"
+local MAX_LOG_LINES = 4
 
+-- STATE
+local currentAction = "Finding candy..."
+local hopStart = tick()
+local logLines = {}
+local guiVisible = true
+
+local function addLog(msg)
+    local t = os.date("%H:%M:%S")
+    table.insert(logLines, 1, "[" .. t .. "] " .. msg)
+    while #logLines > MAX_LOG_LINES do
+        table.remove(logLines)
+    end
+end
+
+local function formatTime(sec)
+    sec = math.max(0, math.floor(sec))
+    local m = math.floor(sec / 60)
+    local s = sec % 60
+    return string.format("%02d:%02d", m, s)
+end
+
+-- ===== STATUS Drawing =====
 local status = Drawing.new("Text")
-status.Text = "Finding candy..."
 status.Size = 18
 status.Center = true
 status.Outline = true
@@ -24,18 +44,85 @@ status.Color = Color3.fromRGB(255, 255, 255)
 status.Position = Vector2.new(camera.ViewportSize.X / 2, 35)
 status.Visible = true
 
+local function refreshStatus()
+    local remaining = HOP_INTERVAL - (tick() - hopStart)
+    local text = "CatLazy Auto Candy"
+        .. "\nStatus: " .. currentAction
+        .. "\nNext hop: " .. formatTime(remaining)
+    if #logLines > 0 then
+        text = text .. "\n--- Log ---\n" .. table.concat(logLines, "\n")
+    end
+    status.Text = text
+    status.Visible = guiVisible
+end
+
 game:GetService("RunService").RenderStepped:Connect(function()
     camera = workspace.CurrentCamera
     status.Position = Vector2.new(camera.ViewportSize.X / 2, 35)
+    refreshStatus()
 end)
 
+-- ===== TOGGLE BUTTON (mobile) =====
+local playerGui = player:WaitForChild("PlayerGui")
+
+-- xóa GUI cũ nếu script reload
+local oldGui = playerGui:FindFirstChild("CatLazyToggle")
+if oldGui then oldGui:Destroy() end
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "CatLazyToggle"
+screenGui.ResetOnSpawn = false
+screenGui.IgnoreGuiInset = true
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent = playerGui
+
+local toggleBtn = Instance.new("TextButton")
+toggleBtn.Size = UDim2.new(0, 60, 0, 60)
+toggleBtn.Position = UDim2.new(1, -70, 0, 70)
+toggleBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+toggleBtn.BackgroundTransparency = 0.15
+toggleBtn.Text = "ON"
+toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleBtn.TextSize = 20
+toggleBtn.Font = Enum.Font.SourceSansBold
+toggleBtn.AutoButtonColor = true
+toggleBtn.Active = true
+toggleBtn.Parent = screenGui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(1, 0)
+corner.Parent = toggleBtn
+
+local stroke = Instance.new("UIStroke")
+stroke.Color = Color3.fromRGB(120, 200, 255)
+stroke.Thickness = 2
+stroke.Transparency = 0.3
+stroke.Parent = toggleBtn
+
+toggleBtn.MouseButton1Click:Connect(function()
+    guiVisible = not guiVisible
+    status.Visible = guiVisible
+    toggleBtn.Text = guiVisible and "ON" or "OFF"
+    if guiVisible then
+        stroke.Color = Color3.fromRGB(120, 200, 255)
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+    else
+        stroke.Color = Color3.fromRGB(120, 120, 120)
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    end
+end)
+
+-- mobile: Touch tap cũng kích hoạt (Roblox tự fire MouseButton1Click từ touch)
+-- drag được nếu Sam cần; hiện tại cố định góc phải trên
+
 local function setStatus(message)
-    status.Text = "Discord: discord.gg/aBq4NTkMyP\nStatus: " .. message
+    currentAction = message
 end
 
--- HOP SERVER + re-exec sau khi hop
-local function hopServer()
+-- ===== HOP =====
+local function hopServer(reason)
     setStatus("Hopping server...")
+    addLog("Hop triggered: " .. (reason or "manual"))
 
     if queue_on_teleport then
         queue_on_teleport([[
@@ -54,22 +141,28 @@ local function hopServer()
     end)
 
     if ok and servers and servers.data then
+        local total = 0
+        for _ in ipairs(servers.data) do total = total + 1 end
+        addLog(string.format("Found %d public servers", total))
+
         for _, s in ipairs(servers.data) do
             if s.playing < s.maxPlayers and s.id ~= game.JobId then
+                addLog(string.format("Teleporting to %d/%d slot", s.playing, s.maxPlayers))
                 pcall(function()
                     TeleportService:TeleportToPlaceInstance(game.PlaceId, s.id, player)
                 end)
                 return
             end
         end
+        addLog("All servers full - rejoin same place")
+    else
+        addLog("Server list fetch failed - rejoin same place")
     end
 
     pcall(function()
         TeleportService:Teleport(game.PlaceId, player)
     end)
 end
-
-local hopStart = tick()
 
 local function isBusy(character)
     return character:FindFirstChild("RootAnchor") or
@@ -104,9 +197,11 @@ local function findClosestDoor(root)
     return closestPrompt, closestPart
 end
 
+addLog("CatLazy loaded - hop every 15m")
+
 while task.wait() do
     if tick() - hopStart >= HOP_INTERVAL then
-        hopServer()
+        hopServer("15min timer")
         return
     end
 
