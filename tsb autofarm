@@ -1,8 +1,10 @@
 --[[
 CatLazy Auto Candy
-v4: rebrand + toggle GUI (mobile-friendly)
+v6: glassmorphism UI + gradient + progress bar + smooth animations
 ]]
 local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
 local player = Players.LocalPlayer
@@ -19,10 +21,11 @@ local currentAction = "Finding candy..."
 local hopStart = tick()
 local logLines = {}
 local guiVisible = true
+local toggleAnim = false
 
 local function addLog(msg)
     local t = os.date("%H:%M:%S")
-    table.insert(logLines, 1, "[" .. t .. "] " .. msg)
+    table.insert(logLines, 1, t .. "  " .. msg)
     while #logLines > MAX_LOG_LINES do
         table.remove(logLines)
     end
@@ -35,85 +38,436 @@ local function formatTime(sec)
     return string.format("%02d:%02d", m, s)
 end
 
--- ===== STATUS Drawing =====
-local status = Drawing.new("Text")
-status.Size = 18
-status.Center = true
-status.Outline = true
-status.Color = Color3.fromRGB(255, 255, 255)
-status.Position = Vector2.new(camera.ViewportSize.X / 2, 35)
-status.Visible = true
-
-local function refreshStatus()
-    local remaining = HOP_INTERVAL - (tick() - hopStart)
-    local text = "CatLazy Auto Candy"
-        .. "\nStatus: " .. currentAction
-        .. "\nNext hop: " .. formatTime(remaining)
-    if #logLines > 0 then
-        text = text .. "\n--- Log ---\n" .. table.concat(logLines, "\n")
+-- ===== GET GUI PARENT =====
+local function getGuiParent()
+    if gethui then
+        local ok, h = pcall(gethui)
+        if ok and h then return h end
     end
-    status.Text = text
-    status.Visible = guiVisible
+    return player:WaitForChild("PlayerGui")
+end
+local guiParent = getGuiParent()
+
+for _, g in ipairs(guiParent:GetChildren()) do
+    if g.Name == "CatLazyMain" or g.Name == "CatLazyToggle" then
+        g:Destroy()
+    end
 end
 
-game:GetService("RunService").RenderStepped:Connect(function()
-    camera = workspace.CurrentCamera
-    status.Position = Vector2.new(camera.ViewportSize.X / 2, 35)
-    refreshStatus()
-end)
+-- ===== PALETTE =====
+local C = {
+    bg        = Color3.fromRGB(18, 18, 24),
+    bg2       = Color3.fromRGB(30, 30, 42),
+    accent    = Color3.fromRGB(120, 200, 255),
+    accent2   = Color3.fromRGB(180, 120, 255),
+    success   = Color3.fromRGB(80, 220, 140),
+    danger    = Color3.fromRGB(255, 90, 90),
+    text      = Color3.fromRGB(255, 255, 255),
+    textDim   = Color3.fromRGB(160, 160, 175),
+    log       = Color3.fromRGB(140, 200, 180),
+}
 
--- ===== TOGGLE BUTTON (mobile) =====
-local playerGui = player:WaitForChild("PlayerGui")
+-- ===== MAIN PANEL =====
+local mainGui = Instance.new("ScreenGui")
+mainGui.Name = "CatLazyMain"
+mainGui.ResetOnSpawn = false
+mainGui.IgnoreGuiInset = true
+mainGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+mainGui.DisplayOrder = 999
+mainGui.Parent = guiParent
 
--- xóa GUI cũ nếu script reload
-local oldGui = playerGui:FindFirstChild("CatLazyToggle")
-if oldGui then oldGui:Destroy() end
+local panel = Instance.new("Frame")
+panel.Size = UDim2.new(0, 340, 0, 220)
+panel.Position = UDim2.new(0.5, -170, 0, 50)
+panel.BackgroundColor3 = C.bg
+panel.BackgroundTransparency = 0.08
+panel.BorderSizePixel = 0
+panel.ClipsDescendants = true
+panel.Active = true
+panel.Draggable = false
+panel.Parent = mainGui
 
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "CatLazyToggle"
-screenGui.ResetOnSpawn = false
-screenGui.IgnoreGuiInset = true
-screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-screenGui.Parent = playerGui
+local panelCorner = Instance.new("UICorner")
+panelCorner.CornerRadius = UDim.new(0, 16)
+panelCorner.Parent = panel
 
-local toggleBtn = Instance.new("TextButton")
-toggleBtn.Size = UDim2.new(0, 60, 0, 60)
-toggleBtn.Position = UDim2.new(1, -70, 0, 70)
-toggleBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
-toggleBtn.BackgroundTransparency = 0.15
-toggleBtn.Text = "ON"
-toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-toggleBtn.TextSize = 20
-toggleBtn.Font = Enum.Font.SourceSansBold
-toggleBtn.AutoButtonColor = true
-toggleBtn.Active = true
-toggleBtn.Parent = screenGui
+local panelGradient = Instance.new("UIGradient")
+panelGradient.Color = ColorSequence.new{
+    ColorSequenceKeypoint.new(0, C.bg2),
+    ColorSequenceKeypoint.new(1, C.bg),
+}
+panelGradient.Rotation = 135
+panelGradient.Parent = panel
 
-local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(1, 0)
-corner.Parent = toggleBtn
+local panelStroke = Instance.new("UIStroke")
+panelStroke.Color = C.accent
+panelStroke.Thickness = 1.5
+panelStroke.Transparency = 0.55
+panelStroke.Parent = panel
 
-local stroke = Instance.new("UIStroke")
-stroke.Color = Color3.fromRGB(120, 200, 255)
-stroke.Thickness = 2
-stroke.Transparency = 0.3
-stroke.Parent = toggleBtn
+-- shadow
+local shadow = Instance.new("ImageLabel")
+shadow.Name = "Shadow"
+shadow.AnchorPoint = Vector2.new(0.5, 0.5)
+shadow.Position = UDim2.new(0.5, 0, 0.5, 6)
+shadow.Size = UDim2.new(1, 60, 1, 60)
+shadow.BackgroundTransparency = 1
+shadow.Image = "rbxassetid://6014261993"
+shadow.ImageColor3 = Color3.fromRGB(0, 0, 0)
+shadow.ImageTransparency = 0.5
+shadow.ScaleType = Enum.ScaleType.Slice
+shadow.SliceCenter = Rect.new(49, 49, 450, 450)
+shadow.ZIndex = -1
+shadow.Parent = panel
 
-toggleBtn.MouseButton1Click:Connect(function()
-    guiVisible = not guiVisible
-    status.Visible = guiVisible
-    toggleBtn.Text = guiVisible and "ON" or "OFF"
-    if guiVisible then
-        stroke.Color = Color3.fromRGB(120, 200, 255)
-        toggleBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
-    else
-        stroke.Color = Color3.fromRGB(120, 120, 120)
-        toggleBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+-- ===== HEADER =====
+local header = Instance.new("Frame")
+header.Size = UDim2.new(1, 0, 0, 40)
+header.BackgroundTransparency = 1
+header.Parent = panel
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -80, 1, 0)
+title.Position = UDim2.new(0, 16, 0, 0)
+title.BackgroundTransparency = 1
+title.Text = "CatLazy"
+title.TextColor3 = C.text
+title.TextSize = 20
+title.Font = Enum.Font.GothamBold
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Parent = header
+
+local badge = Instance.new("TextLabel")
+badge.Size = UDim2.new(0, 52, 0, 20)
+badge.Position = UDim2.new(1, -68, 0.5, -10)
+badge.BackgroundColor3 = C.accent
+badge.BackgroundTransparency = 0.75
+badge.Text = "AUTO"
+badge.TextColor3 = C.accent
+badge.TextSize = 11
+badge.Font = Enum.Font.GothamBold
+badge.BorderSizePixel = 0
+badge.Parent = header
+
+local badgeCorner = Instance.new("UICorner")
+badgeCorner.CornerRadius = UDim.new(0, 6)
+badgeCorner.Parent = badge
+
+-- separator
+local sep1 = Instance.new("Frame")
+sep1.Size = UDim2.new(1, -32, 0, 1)
+sep1.Position = UDim2.new(0, 16, 0, 40)
+sep1.BackgroundColor3 = C.accent
+sep1.BackgroundTransparency = 0.8
+sep1.BorderSizePixel = 0
+sep1.Parent = panel
+
+-- ===== STATUS ROW =====
+local statusRow = Instance.new("Frame")
+statusRow.Size = UDim2.new(1, -32, 0, 28)
+statusRow.Position = UDim2.new(0, 16, 0, 50)
+statusRow.BackgroundTransparency = 1
+statusRow.Parent = panel
+
+local statusDot = Instance.new("Frame")
+statusDot.Size = UDim2.new(0, 10, 0, 10)
+statusDot.Position = UDim2.new(0, 0, 0.5, -5)
+statusDot.BackgroundColor3 = C.success
+statusDot.BorderSizePixel = 0
+statusDot.Parent = statusRow
+
+local dotCorner = Instance.new("UICorner")
+dotCorner.CornerRadius = UDim.new(1, 0)
+dotCorner.Parent = statusDot
+
+local dotPulse = Instance.new("UIStroke")
+dotPulse.Color = C.success
+dotPulse.Thickness = 2
+dotPulse.Transparency = 0.4
+dotPulse.Parent = statusDot
+
+local statusText = Instance.new("TextLabel")
+statusText.Size = UDim2.new(1, -20, 1, 0)
+statusText.Position = UDim2.new(0, 20, 0, 0)
+statusText.BackgroundTransparency = 1
+statusText.Text = "Finding candy..."
+statusText.TextColor3 = C.text
+statusText.TextSize = 14
+statusText.Font = Enum.Font.GothamMedium
+statusText.TextXAlignment = Enum.TextXAlignment.Left
+statusText.Parent = statusRow
+
+-- pulse animation
+spawn(function()
+    while mainGui.Parent do
+        local tween = TweenService:Create(dotPulse, TweenInfo.new(0.9, Enum.EasingStyle.Sine), {
+            Transparency = 0.9,
+            Thickness = 4,
+        })
+        tween:Play()
+        tween.Completed:Wait()
+        local tween2 = TweenService:Create(dotPulse, TweenInfo.new(0.9, Enum.EasingStyle.Sine), {
+            Transparency = 0.4,
+            Thickness = 2,
+        })
+        tween2:Play()
+        tween2.Completed:Wait()
     end
 end)
 
--- mobile: Touch tap cũng kích hoạt (Roblox tự fire MouseButton1Click từ touch)
--- drag được nếu Sam cần; hiện tại cố định góc phải trên
+-- ===== PROGRESS BAR =====
+local progressRow = Instance.new("Frame")
+progressRow.Size = UDim2.new(1, -32, 0, 34)
+progressRow.Position = UDim2.new(0, 16, 0, 84)
+progressRow.BackgroundTransparency = 1
+progressRow.Parent = panel
+
+local progressLabel = Instance.new("TextLabel")
+progressLabel.Size = UDim2.new(1, 0, 0, 14)
+progressLabel.BackgroundTransparency = 1
+progressLabel.Text = "NEXT HOP"
+progressLabel.TextColor3 = C.textDim
+progressLabel.TextSize = 10
+progressLabel.Font = Enum.Font.GothamBold
+progressLabel.TextXAlignment = Enum.TextXAlignment.Left
+progressLabel.Parent = progressRow
+
+local progressTime = Instance.new("TextLabel")
+progressTime.Size = UDim2.new(0, 60, 0, 14)
+progressTime.Position = UDim2.new(1, -60, 0, 0)
+progressTime.BackgroundTransparency = 1
+progressTime.Text = "00:00"
+progressTime.TextColor3 = C.accent
+progressTime.TextSize = 11
+progressTime.Font = Enum.Font.GothamBold
+progressTime.TextXAlignment = Enum.TextXAlignment.Right
+progressTime.Parent = progressRow
+
+local progressBg = Instance.new("Frame")
+progressBg.Size = UDim2.new(1, 0, 0, 6)
+progressBg.Position = UDim2.new(0, 0, 0, 20)
+progressBg.BackgroundColor3 = C.bg2
+progressBg.BackgroundTransparency = 0.3
+progressBg.BorderSizePixel = 0
+progressBg.Parent = progressRow
+
+local bgCorner = Instance.new("UICorner")
+bgCorner.CornerRadius = UDim.new(1, 0)
+bgCorner.Parent = progressBg
+
+local progressFill = Instance.new("Frame")
+progressFill.Size = UDim2.new(1, 0, 1, 0)
+progressFill.BackgroundColor3 = C.accent
+progressFill.BorderSizePixel = 0
+progressFill.Parent = progressBg
+
+local fillCorner = Instance.new("UICorner")
+fillCorner.CornerRadius = UDim.new(1, 0)
+fillCorner.Parent = progressFill
+
+local fillGradient = Instance.new("UIGradient")
+fillGradient.Color = ColorSequence.new{
+    ColorSequenceKeypoint.new(0, C.accent),
+    ColorSequenceKeypoint.new(1, C.accent2),
+}
+fillGradient.Parent = progressFill
+
+-- ===== LOG SECTION =====
+local logSep = Instance.new("Frame")
+logSep.Size = UDim2.new(1, -32, 0, 1)
+logSep.Position = UDim2.new(0, 16, 0, 126)
+logSep.BackgroundColor3 = C.accent
+logSep.BackgroundTransparency = 0.8
+logSep.BorderSizePixel = 0
+logSep.Parent = panel
+
+local logFrame = Instance.new("Frame")
+logFrame.Size = UDim2.new(1, -32, 0, 78)
+logFrame.Position = UDim2.new(0, 16, 0, 132)
+logFrame.BackgroundTransparency = 1
+logFrame.Parent = panel
+
+local logLabel = Instance.new("TextLabel")
+logLabel.Size = UDim2.new(1, 0, 1, 0)
+logLabel.BackgroundTransparency = 1
+logLabel.Text = "Loading..."
+logLabel.TextColor3 = C.log
+logLabel.TextSize = 11
+logLabel.Font = Enum.Font.Code
+logLabel.TextXAlignment = Enum.TextXAlignment.Left
+logLabel.TextYAlignment = Enum.TextYAlignment.Top
+logLabel.Parent = logFrame
+
+-- ===== DRAG PANEL =====
+local dragging, dragStart, startPos
+header.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = panel.Position
+    end
+end)
+header.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
+        panel.Position = UDim2.new(
+            startPos.X.Scale, startPos.X.Offset + delta.X,
+            startPos.Y.Scale, startPos.Y.Offset + delta.Y
+        )
+    end
+end)
+
+-- ===== TOGGLE BUTTON =====
+local toggleGui = Instance.new("ScreenGui")
+toggleGui.Name = "CatLazyToggle"
+toggleGui.ResetOnSpawn = false
+toggleGui.IgnoreGuiInset = true
+toggleGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+toggleGui.DisplayOrder = 1000
+toggleGui.Parent = guiParent
+
+local toggleBtn = Instance.new("TextButton")
+toggleBtn.Size = UDim2.new(0, 56, 0, 56)
+toggleBtn.Position = UDim2.new(1, -70, 0, 70)
+toggleBtn.BackgroundColor3 = C.accent
+toggleBtn.BackgroundTransparency = 0.15
+toggleBtn.Text = "◉"
+toggleBtn.TextColor3 = C.text
+toggleBtn.TextSize = 26
+toggleBtn.Font = Enum.Font.GothamBold
+toggleBtn.AutoButtonColor = false
+toggleBtn.Active = true
+toggleBtn.ZIndex = 10
+toggleBtn.Parent = toggleGui
+
+local tCorner = Instance.new("UICorner")
+tCorner.CornerRadius = UDim.new(1, 0)
+tCorner.Parent = toggleBtn
+
+local tGradient = Instance.new("UIGradient")
+tGradient.Color = ColorSequence.new{
+    ColorSequenceKeypoint.new(0, C.accent),
+    ColorSequenceKeypoint.new(1, C.accent2),
+}
+tGradient.Rotation = 45
+tGradient.Parent = toggleBtn
+
+local tStroke = Instance.new("UIStroke")
+tStroke.Color = C.text
+tStroke.Thickness = 1.5
+tStroke.Transparency = 0.7
+tStroke.Parent = toggleBtn
+
+-- button drag
+local bDragging, bStart, bStartPos
+toggleBtn.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+        bDragging = false
+        bStart = input.Position
+        bStartPos = toggleBtn.Position
+    end
+end)
+toggleBtn.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+        if bDragging then bDragging = false end
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if (input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch) then
+        if bStart then
+            local delta = (input.Position - bStart).Magnitude
+            if delta > 8 then
+                bDragging = true
+                toggleBtn.Position = UDim2.new(
+                    bStartPos.X.Scale, bStartPos.X.Offset + (input.Position.X - bStart.X),
+                    bStartPos.Y.Scale, bStartPos.Y.Offset + (input.Position.Y - bStart.Y)
+                )
+            end
+        end
+    end
+end)
+
+local function refreshPanelVisibility()
+    local targetPos = guiVisible and UDim2.new(0.5, -170, 0, 50) or UDim2.new(0.5, -170, 0, -300)
+    local targetTrans = guiVisible and 0.08 or 1
+    TweenService:Create(panel, TweenInfo.new(0.35, Enum.EasingStyle.Quint), {
+        Position = targetPos,
+        BackgroundTransparency = targetTrans,
+    }):Play()
+    TweenService:Create(mainGui, TweenInfo.new(0.35), {}):Play()
+    if not guiVisible then
+        task.delay(0.4, function()
+            panel.Visible = false
+        end)
+    else
+        panel.Visible = true
+    end
+end
+
+toggleBtn.MouseButton1Click:Connect(function()
+    if bDragging then return end
+    guiVisible = not guiVisible
+    panel.Visible = true
+    refreshPanelVisibility()
+
+    if guiVisible then
+        tGradient.Color = ColorSequence.new{
+            ColorSequenceKeypoint.new(0, C.accent),
+            ColorSequenceKeypoint.new(1, C.accent2),
+        }
+        toggleBtn.Text = "◉"
+        toggleBtn.TextColor3 = C.text
+    else
+        tGradient.Color = ColorSequence.new{
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(80,80,90)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(50,50,60)),
+        }
+        toggleBtn.Text = "○"
+        toggleBtn.TextColor3 = C.textDim
+    end
+end)
+
+-- ===== STATUS REFRESH =====
+local function refreshStatus()
+    local remaining = HOP_INTERVAL - (tick() - hopStart)
+    local pct = math.clamp(remaining / HOP_INTERVAL, 0, 1)
+
+    statusText.Text = currentAction
+    progressTime.Text = formatTime(remaining)
+    progressFill.Size = UDim2.new(pct, 0, 1, 0)
+    progressFill.BackgroundColor3 = pct < 0.1 and C.danger or C.accent
+
+    local logText = #logLines > 0 and table.concat(logLines, "\n") or "(no log yet)"
+    logLabel.Text = logText
+
+    if currentAction:find("Hopping") or currentAction:find("dead") then
+        statusDot.BackgroundColor3 = C.danger
+        dotPulse.Color = C.danger
+    elseif currentAction:find("Waiting") then
+        statusDot.BackgroundColor3 = Color3.fromRGB(255, 200, 80)
+        dotPulse.Color = Color3.fromRGB(255, 200, 80)
+    else
+        statusDot.BackgroundColor3 = C.success
+        dotPulse.Color = C.success
+    end
+end
+
+TweenService:Create(panel, TweenInfo.new(0.4, Enum.EasingStyle.Back), {
+    Position = UDim2.new(0.5, -170, 0, 50),
+}):Play()
+
+game:GetService("RunService").RenderStepped:Connect(refreshStatus)
 
 local function setStatus(message)
     currentAction = message
@@ -122,7 +476,7 @@ end
 -- ===== HOP =====
 local function hopServer(reason)
     setStatus("Hopping server...")
-    addLog("Hop triggered: " .. (reason or "manual"))
+    addLog("Hop: " .. (reason or "manual"))
 
     if queue_on_teleport then
         queue_on_teleport([[
@@ -143,20 +497,20 @@ local function hopServer(reason)
     if ok and servers and servers.data then
         local total = 0
         for _ in ipairs(servers.data) do total = total + 1 end
-        addLog(string.format("Found %d public servers", total))
+        addLog("Found " .. total .. " servers")
 
         for _, s in ipairs(servers.data) do
             if s.playing < s.maxPlayers and s.id ~= game.JobId then
-                addLog(string.format("Teleporting to %d/%d slot", s.playing, s.maxPlayers))
+                addLog(s.playing .. "/" .. s.maxPlayers .. " -> teleport")
                 pcall(function()
                     TeleportService:TeleportToPlaceInstance(game.PlaceId, s.id, player)
                 end)
                 return
             end
         end
-        addLog("All servers full - rejoin same place")
+        addLog("All full - rejoin")
     else
-        addLog("Server list fetch failed - rejoin same place")
+        addLog("Fetch failed - rejoin")
     end
 
     pcall(function()
@@ -197,11 +551,11 @@ local function findClosestDoor(root)
     return closestPrompt, closestPart
 end
 
-addLog("CatLazy loaded - hop every 15m")
+addLog("Loaded - hop every 15m")
 
 while task.wait() do
     if tick() - hopStart >= HOP_INTERVAL then
-        hopServer("15min timer")
+        hopServer("15m timer")
         return
     end
 
@@ -249,13 +603,13 @@ while task.wait() do
         local prompt, part = findClosestDoor(root)
 
         if prompt and part then
-            setStatus("Visiting closest door...")
+            setStatus("Visiting door...")
             humanoid.Jump = true
             humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
             root.CFrame = part.CFrame
             fireproximityprompt(prompt)
         else
-            setStatus("No candy - No doors found")
+            setStatus("No candy - no doors")
             root.CFrame = CFrame.new(0, 100, 0)
         end
     end
