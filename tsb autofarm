@@ -1,6 +1,6 @@
 --[[
 CatLazy Auto Candy
-v7: glassmorphism UI + gradient + progress bar + smooth animations + "CatLazy Tool" toggle
+v7.1: v7 + webhook notify + candy/door stats + 10min hop
 ]]
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
@@ -12,7 +12,7 @@ local folder = workspace:WaitForChild("HalloweenCandy")
 local trees = workspace:WaitForChild("HalloweenDoorTrees")
 local camera = workspace.CurrentCamera
 
-local HOP_INTERVAL = 15 * 60
+local HOP_INTERVAL = 10 * 60
 local SCRIPT_URL = "https://raw.githubusercontent.com/Catgame-VN/game-sf/refs/heads/main/tsb%20autofarm"
 local MAX_LOG_LINES = 4
 
@@ -21,6 +21,12 @@ local currentAction = "Finding candy..."
 local hopStart = tick()
 local logLines = {}
 local guiVisible = true
+
+-- STATS + WEBHOOK
+local candyCollected = 0
+local doorsKnocked = 0
+local lastCandyRef = nil
+local webhookUrl = ""
 
 local function addLog(msg)
     local t = os.date("%H:%M:%S")
@@ -37,6 +43,33 @@ local function formatTime(sec)
     return string.format("%02d:%02d", m, s)
 end
 
+-- ===== WEBHOOK =====
+local function sendWebhook(title, desc, color)
+    if webhookUrl == "" then return false end
+    local ok = pcall(function()
+        local body = HttpService:JSONEncode({
+            username = "CatLazy",
+            embeds = {{
+                title = title,
+                description = desc,
+                color = color or 0x78c8ff,
+                timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+                footer = { text = "CatLazy Auto Candy" },
+            }},
+        })
+        local fn = request or (syn and syn.request) or (http and http.request) or http_request
+        if fn then
+            fn({
+                Url = webhookUrl,
+                Method = "POST",
+                Headers = { ["Content-Type"] = "application/json" },
+                Body = body,
+            })
+        end
+    end)
+    return ok
+end
+
 -- ===== GET GUI PARENT =====
 local function getGuiParent()
     if gethui then
@@ -48,7 +81,7 @@ end
 local guiParent = getGuiParent()
 
 for _, g in ipairs(guiParent:GetChildren()) do
-    if g.Name == "CatLazyMain" or g.Name == "CatLazyToggle" then
+    if g.Name == "CatLazyMain" or g.Name == "CatLazyToggle" or g.Name == "CatLazyWebhook" then
         g:Destroy()
     end
 end
@@ -76,14 +109,13 @@ mainGui.DisplayOrder = 999
 mainGui.Parent = guiParent
 
 local panel = Instance.new("Frame")
-panel.Size = UDim2.new(0, 340, 0, 220)
+panel.Size = UDim2.new(0, 340, 0, 240)
 panel.Position = UDim2.new(0.5, -170, 0, 50)
 panel.BackgroundColor3 = C.bg
 panel.BackgroundTransparency = 0.08
 panel.BorderSizePixel = 0
 panel.ClipsDescendants = true
 panel.Active = true
-panel.Draggable = false
 panel.Parent = mainGui
 
 local panelCorner = Instance.new("UICorner")
@@ -104,7 +136,6 @@ panelStroke.Thickness = 1.5
 panelStroke.Transparency = 0.55
 panelStroke.Parent = panel
 
--- shadow
 local shadow = Instance.new("ImageLabel")
 shadow.Name = "Shadow"
 shadow.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -152,7 +183,6 @@ local badgeCorner = Instance.new("UICorner")
 badgeCorner.CornerRadius = UDim.new(0, 6)
 badgeCorner.Parent = badge
 
--- separator
 local sep1 = Instance.new("Frame")
 sep1.Size = UDim2.new(1, -32, 0, 1)
 sep1.Position = UDim2.new(0, 16, 0, 40)
@@ -196,7 +226,6 @@ statusText.Font = Enum.Font.GothamMedium
 statusText.TextXAlignment = Enum.TextXAlignment.Left
 statusText.Parent = statusRow
 
--- pulse animation
 spawn(function()
     while mainGui.Parent do
         local tween = TweenService:Create(dotPulse, TweenInfo.new(0.9, Enum.EasingStyle.Sine), {
@@ -214,10 +243,27 @@ spawn(function()
     end
 end)
 
+-- ===== STATS ROW =====
+local statsRow = Instance.new("Frame")
+statsRow.Size = UDim2.new(1, -32, 0, 20)
+statsRow.Position = UDim2.new(0, 16, 0, 80)
+statsRow.BackgroundTransparency = 1
+statsRow.Parent = panel
+
+local statLabel = Instance.new("TextLabel")
+statLabel.Size = UDim2.new(1, 0, 1, 0)
+statLabel.BackgroundTransparency = 1
+statLabel.Text = "Candy: 0   |   Doors: 0"
+statLabel.TextColor3 = C.accent2
+statLabel.TextSize = 12
+statLabel.Font = Enum.Font.GothamBold
+statLabel.TextXAlignment = Enum.TextXAlignment.Left
+statLabel.Parent = statsRow
+
 -- ===== PROGRESS BAR =====
 local progressRow = Instance.new("Frame")
 progressRow.Size = UDim2.new(1, -32, 0, 34)
-progressRow.Position = UDim2.new(0, 16, 0, 84)
+progressRow.Position = UDim2.new(0, 16, 0, 104)
 progressRow.BackgroundTransparency = 1
 progressRow.Parent = panel
 
@@ -274,7 +320,7 @@ fillGradient.Parent = progressFill
 -- ===== LOG SECTION =====
 local logSep = Instance.new("Frame")
 logSep.Size = UDim2.new(1, -32, 0, 1)
-logSep.Position = UDim2.new(0, 16, 0, 126)
+logSep.Position = UDim2.new(0, 16, 0, 146)
 logSep.BackgroundColor3 = C.accent
 logSep.BackgroundTransparency = 0.8
 logSep.BorderSizePixel = 0
@@ -282,7 +328,7 @@ logSep.Parent = panel
 
 local logFrame = Instance.new("Frame")
 logFrame.Size = UDim2.new(1, -32, 0, 78)
-logFrame.Position = UDim2.new(0, 16, 0, 132)
+logFrame.Position = UDim2.new(0, 16, 0, 152)
 logFrame.BackgroundTransparency = 1
 logFrame.Parent = panel
 
@@ -365,7 +411,6 @@ tStroke.Thickness = 1.5
 tStroke.Transparency = 0.7
 tStroke.Parent = toggleBtn
 
--- button drag
 local bDragging, bStart, bStartPos
 toggleBtn.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1
@@ -436,6 +481,219 @@ toggleBtn.MouseButton1Click:Connect(function()
     end
 end)
 
+-- ===== WEBHOOK BUTTON (dưới CatLazy Tool) =====
+local webhookBtn = Instance.new("TextButton")
+webhookBtn.Size = UDim2.new(0, 130, 0, 30)
+webhookBtn.Position = UDim2.new(1, -145, 0, 116)
+webhookBtn.BackgroundColor3 = C.bg2
+webhookBtn.BackgroundTransparency = 0.2
+webhookBtn.Text = "Set Webhook"
+webhookBtn.TextColor3 = C.textDim
+webhookBtn.TextSize = 12
+webhookBtn.Font = Enum.Font.GothamBold
+webhookBtn.AutoButtonColor = false
+webhookBtn.Active = true
+webhookBtn.ZIndex = 10
+webhookBtn.Parent = toggleGui
+
+local wCorner = Instance.new("UICorner")
+wCorner.CornerRadius = UDim.new(0, 8)
+wCorner.Parent = webhookBtn
+
+local wStroke = Instance.new("UIStroke")
+wStroke.Color = C.accent
+wStroke.Thickness = 1
+wStroke.Transparency = 0.6
+wStroke.Parent = webhookBtn
+
+-- ===== WEBHOOK DIALOG =====
+local webhookGui = Instance.new("ScreenGui")
+webhookGui.Name = "CatLazyWebhook"
+webhookGui.ResetOnSpawn = false
+webhookGui.IgnoreGuiInset = true
+webhookGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+webhookGui.DisplayOrder = 1001
+webhookGui.Enabled = false
+webhookGui.Parent = guiParent
+
+local dialogOverlay = Instance.new("TextButton")
+dialogOverlay.Size = UDim2.new(1, 0, 1, 0)
+dialogOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+dialogOverlay.BackgroundTransparency = 0.5
+dialogOverlay.Text = ""
+dialogOverlay.AutoButtonColor = false
+dialogOverlay.BorderSizePixel = 0
+dialogOverlay.Parent = webhookGui
+
+local dialog = Instance.new("Frame")
+dialog.Size = UDim2.new(0, 320, 0, 180)
+dialog.Position = UDim2.new(0.5, -160, 0.5, -90)
+dialog.BackgroundColor3 = C.bg
+dialog.BorderSizePixel = 0
+dialog.Parent = webhookGui
+
+local dCorner = Instance.new("UICorner")
+dCorner.CornerRadius = UDim.new(0, 14)
+dCorner.Parent = dialog
+
+local dGradient = Instance.new("UIGradient")
+dGradient.Color = ColorSequence.new{
+    ColorSequenceKeypoint.new(0, C.bg2),
+    ColorSequenceKeypoint.new(1, C.bg),
+}
+dGradient.Rotation = 135
+dGradient.Parent = dialog
+
+local dStroke = Instance.new("UIStroke")
+dStroke.Color = C.accent
+dStroke.Thickness = 1.5
+dStroke.Transparency = 0.4
+dStroke.Parent = dialog
+
+local dTitle = Instance.new("TextLabel")
+dTitle.Size = UDim2.new(1, -32, 0, 26)
+dTitle.Position = UDim2.new(0, 16, 0, 14)
+dTitle.BackgroundTransparency = 1
+dTitle.Text = "Discord Webhook URL"
+dTitle.TextColor3 = C.text
+dTitle.TextSize = 15
+dTitle.Font = Enum.Font.GothamBold
+dTitle.TextXAlignment = Enum.TextXAlignment.Left
+dTitle.Parent = dialog
+
+local dHint = Instance.new("TextLabel")
+dHint.Size = UDim2.new(1, -32, 0, 14)
+dHint.Position = UDim2.new(0, 16, 0, 40)
+dHint.BackgroundTransparency = 1
+dHint.Text = "Paste webhook URL de nhan thong bao khi hop"
+dHint.TextColor3 = C.textDim
+dHint.TextSize = 10
+dHint.Font = Enum.Font.Gotham
+dHint.TextXAlignment = Enum.TextXAlignment.Left
+dHint.Parent = dialog
+
+local dInput = Instance.new("TextBox")
+dInput.Size = UDim2.new(1, -32, 0, 34)
+dInput.Position = UDim2.new(0, 16, 0, 60)
+dInput.BackgroundColor3 = C.bg2
+dInput.BackgroundTransparency = 0.2
+dInput.Text = ""
+dInput.PlaceholderText = "https://discord.com/api/webhooks/..."
+dInput.TextColor3 = C.text
+dInput.PlaceholderColor3 = C.textDim
+dInput.TextSize = 11
+dInput.Font = Enum.Font.Code
+dInput.TextXAlignment = Enum.TextXAlignment.Left
+dInput.ClearTextOnFocus = false
+dInput.Parent = dialog
+
+local inputPad = Instance.new("UIPadding")
+inputPad.PaddingLeft = UDim.new(0, 8)
+inputPad.PaddingRight = UDim.new(0, 8)
+inputPad.Parent = dInput
+
+local dInputCorner = Instance.new("UICorner")
+dInputCorner.CornerRadius = UDim.new(0, 8)
+dInputCorner.Parent = dInput
+
+local dTestBtn = Instance.new("TextButton")
+dTestBtn.Size = UDim2.new(0, 90, 0, 28)
+dTestBtn.Position = UDim2.new(0, 16, 1, -42)
+dTestBtn.BackgroundColor3 = Color3.fromRGB(60, 100, 160)
+dTestBtn.Text = "Test"
+dTestBtn.TextColor3 = C.text
+dTestBtn.TextSize = 12
+dTestBtn.Font = Enum.Font.GothamBold
+dTestBtn.BorderSizePixel = 0
+dTestBtn.Parent = dialog
+
+local tBtnCorner = Instance.new("UICorner")
+tBtnCorner.CornerRadius = UDim.new(0, 6)
+tBtnCorner.Parent = dTestBtn
+
+local dSaveBtn = Instance.new("TextButton")
+dSaveBtn.Size = UDim2.new(0, 90, 0, 28)
+dSaveBtn.Position = UDim2.new(1, -206, 1, -42)
+dSaveBtn.BackgroundColor3 = C.accent
+dSaveBtn.Text = "Save"
+dSaveBtn.TextColor3 = C.text
+dSaveBtn.TextSize = 12
+dSaveBtn.Font = Enum.Font.GothamBold
+dSaveBtn.BorderSizePixel = 0
+dSaveBtn.Parent = dialog
+
+local sBtnCorner = Instance.new("UICorner")
+sBtnCorner.CornerRadius = UDim.new(0, 6)
+sBtnCorner.Parent = dSaveBtn
+
+local dCancelBtn = Instance.new("TextButton")
+dCancelBtn.Size = UDim2.new(0, 90, 0, 28)
+dCancelBtn.Position = UDim2.new(1, -106, 1, -42)
+dCancelBtn.BackgroundColor3 = C.bg2
+dCancelBtn.Text = "Cancel"
+dCancelBtn.TextColor3 = C.textDim
+dCancelBtn.TextSize = 12
+dCancelBtn.Font = Enum.Font.GothamBold
+dCancelBtn.BorderSizePixel = 0
+dCancelBtn.Parent = dialog
+
+local cBtnCorner = Instance.new("UICorner")
+cBtnCorner.CornerRadius = UDim.new(0, 6)
+cBtnCorner.Parent = dCancelBtn
+
+webhookBtn.MouseButton1Click:Connect(function()
+    dInput.Text = webhookUrl
+    webhookGui.Enabled = true
+end)
+
+dialogOverlay.MouseButton1Click:Connect(function()
+    webhookGui.Enabled = false
+end)
+
+dCancelBtn.MouseButton1Click:Connect(function()
+    webhookGui.Enabled = false
+end)
+
+dSaveBtn.MouseButton1Click:Connect(function()
+    local url = dInput.Text
+    if url ~= "" and not url:match("^https://discord") then
+        addLog("Invalid webhook URL")
+        return
+    end
+    webhookUrl = url
+    if url ~= "" then
+        wStroke.Color = C.success
+        webhookBtn.Text = "Webhook: ON"
+        webhookBtn.TextColor3 = C.success
+        addLog("Webhook saved")
+    else
+        wStroke.Color = C.accent
+        webhookBtn.Text = "Set Webhook"
+        webhookBtn.TextColor3 = C.textDim
+        addLog("Webhook cleared")
+    end
+    webhookGui.Enabled = false
+end)
+
+dTestBtn.MouseButton1Click:Connect(function()
+    local old = webhookUrl
+    webhookUrl = dInput.Text
+    if webhookUrl == "" then
+        webhookUrl = old
+        addLog("No URL to test")
+        return
+    end
+    sendWebhook(
+        "Test Webhook",
+        "**Candy collected:** " .. candyCollected ..
+        "\n**Doors knocked:** " .. doorsKnocked ..
+        "\n**Session:** " .. formatTime(tick() - hopStart),
+        0x50dc8c
+    )
+    webhookUrl = old
+    addLog("Test sent")
+end)
+
 -- ===== STATUS REFRESH =====
 local function refreshStatus()
     local remaining = HOP_INTERVAL - (tick() - hopStart)
@@ -445,6 +703,8 @@ local function refreshStatus()
     progressTime.Text = formatTime(remaining)
     progressFill.Size = UDim2.new(pct, 0, 1, 0)
     progressFill.BackgroundColor3 = pct < 0.1 and C.danger or C.accent
+
+    statLabel.Text = "Candy: " .. candyCollected .. "   |   Doors: " .. doorsKnocked
 
     local logText = #logLines > 0 and table.concat(logLines, "\n") or "(no log yet)"
     logLabel.Text = logText
@@ -475,6 +735,17 @@ end
 local function hopServer(reason)
     setStatus("Hopping server...")
     addLog("Hop: " .. (reason or "manual"))
+
+    if webhookUrl ~= "" then
+        sendWebhook(
+            "Server Hop",
+            "**Reason:** " .. (reason or "manual") ..
+            "\n**Candy collected:** " .. candyCollected ..
+            "\n**Doors knocked:** " .. doorsKnocked ..
+            "\n**Session time:** " .. formatTime(tick() - hopStart),
+            0x78c8ff
+        )
+    end
 
     if queue_on_teleport then
         queue_on_teleport([[
@@ -549,11 +820,11 @@ local function findClosestDoor(root)
     return closestPrompt, closestPart
 end
 
-addLog("Loaded - hop every 15m")
+addLog("Loaded - hop every 10m")
 
 while task.wait() do
     if tick() - hopStart >= HOP_INTERVAL then
-        hopServer("15m timer")
+        hopServer("10m timer")
         return
     end
 
@@ -593,11 +864,17 @@ while task.wait() do
     end
 
     if closestCandy then
+        -- track candy: đếm khi đổi sang candy mới
+        if closestCandy ~= lastCandyRef then
+            candyCollected = candyCollected + 1
+            lastCandyRef = closestCandy
+        end
         setStatus("Collecting candy...")
         root.CFrame = CFrame.new(closestCandy.Position + Vector3.new(0, 4, 0))
         humanoid.Jump = true
         humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
     else
+        lastCandyRef = nil
         local prompt, part = findClosestDoor(root)
 
         if prompt and part then
@@ -605,10 +882,15 @@ while task.wait() do
             humanoid.Jump = true
             humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
             root.CFrame = part.CFrame
-            fireproximityprompt(prompt)
+            local ok = pcall(function()
+                fireproximityprompt(prompt)
+            end)
+            if ok then
+                doorsKnocked = doorsKnocked + 1
+            end
         else
             setStatus("No candy - no doors")
             root.CFrame = CFrame.new(0, 100, 0)
         end
     end
-    end
+end
