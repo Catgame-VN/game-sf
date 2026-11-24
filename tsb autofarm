@@ -1,6 +1,6 @@
 --[[
 CatLazy Auto Candy
-v7.2: v7.1 + aim camera truoc khi fire + webhook sau moi knock
+v7.3: v7.2 + candy per-door display (log + stat + webhook)
 ]]
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
@@ -28,6 +28,8 @@ local candyCollected = 0
 local doorsKnocked = 0
 local lastCandyRef = nil
 local webhookUrl = ""
+local candySinceLastDoor = 0
+local lastDoorCandy = 0
 
 local function addLog(msg)
     local t = os.date("%H:%M:%S")
@@ -688,6 +690,7 @@ dTestBtn.MouseButton1Click:Connect(function()
         "Test Webhook",
         "**Candy collected:** " .. candyCollected ..
         "\n**Doors knocked:** " .. doorsKnocked ..
+        "\n**Last door candy:** " .. lastDoorCandy ..
         "\n**Session:** " .. formatTime(tick() - hopStart),
         0x50dc8c
     )
@@ -705,7 +708,12 @@ local function refreshStatus()
     progressFill.Size = UDim2.new(pct, 0, 1, 0)
     progressFill.BackgroundColor3 = pct < 0.1 and C.danger or C.accent
 
-    statLabel.Text = "Candy: " .. candyCollected .. "   |   Doors: " .. doorsKnocked
+    -- hiển thị candy tổng + candy cửa vừa xong
+    local candyPart = "Candy: " .. candyCollected
+    if doorsKnocked > 0 then
+        candyPart = candyPart .. " (+" .. lastDoorCandy .. ")"
+    end
+    statLabel.Text = candyPart .. "   |   Doors: " .. doorsKnocked
 
     local logText = #logLines > 0 and table.concat(logLines, "\n") or "(no log yet)"
     logLabel.Text = logText
@@ -743,6 +751,7 @@ local function hopServer(reason)
             "**Reason:** " .. (reason or "manual") ..
             "\n**Candy collected:** " .. candyCollected ..
             "\n**Doors knocked:** " .. doorsKnocked ..
+            "\n**Last door candy:** " .. lastDoorCandy ..
             "\n**Session time:** " .. formatTime(tick() - hopStart),
             0x78c8ff
         )
@@ -750,7 +759,7 @@ local function hopServer(reason)
 
     if queue_on_teleport then
         queue_on_teleport([[
-            loadstring(game:HttpGet("]] .. SCRIPT_URL .. [["))()
+            loadstring(game:HttpGet("]] .. SCRIPT_URL .. [[", true))()
         ]])
     end
 
@@ -821,7 +830,7 @@ local function findClosestDoor(root)
     return closestPrompt, closestPart
 end
 
--- ===== AIM CAMERA (an toan, khong doi CameraType) =====
+-- ===== AIM CAMERA =====
 local function aimCameraAt(part)
     local cam = workspace.CurrentCamera
     if not cam or not part then return nil end
@@ -846,9 +855,18 @@ local function restoreCamera(saved)
     end)
 end
 
--- ===== KNOCK DOOR: aim cam -> fire -> restore -> webhook =====
+-- ===== KNOCK DOOR =====
 local function knockDoor(prompt, part, character, root, humanoid)
-    -- xoay character nhin thang cua
+    -- capture candy từ cửa trước, reset counter
+    if doorsKnocked > 0 then
+        lastDoorCandy = candySinceLastDoor
+        addLog("Prev door: +" .. lastDoorCandy .. " candy")
+    else
+        lastDoorCandy = 0
+    end
+    candySinceLastDoor = 0
+
+    -- xoay character nhìn thẳng cửa
     pcall(function()
         local doorPos = part.Position
         local standPos = doorPos + (doorPos - root.Position).Unit * 5 + Vector3.new(0, 3, 0)
@@ -858,7 +876,7 @@ local function knockDoor(prompt, part, character, root, humanoid)
 
     task.wait(0.25)
 
-    -- aim cam vao cua
+    -- aim cam vào cửa
     local savedCam = aimCameraAt(part)
     task.wait(0.08)
     aimCameraAt(part)
@@ -873,7 +891,7 @@ local function knockDoor(prompt, part, character, root, humanoid)
     if ok then
         doorsKnocked = doorsKnocked + 1
 
-        -- verify busy bat len
+        -- verify busy bật lên
         local waited = 0
         while waited < 1.5 do
             task.wait(0.1)
@@ -881,12 +899,13 @@ local function knockDoor(prompt, part, character, root, humanoid)
             if isBusy(character) then break end
         end
 
-        -- webhook bao cao sau knock
+        -- webhook báo cáo sau knock
         if WEBHOOK_DOOR_NOTIFY and webhookUrl ~= "" then
             sendWebhook(
                 "Door Knocked",
-                "**Doors total:** " .. doorsKnocked ..
-                "\n**Candy collected:** " .. candyCollected ..
+                "**Door #:** " .. doorsKnocked ..
+                "\n**Candy since last door:** +" .. lastDoorCandy ..
+                "\n**Candy total:** " .. candyCollected ..
                 "\n**Session time:** " .. formatTime(tick() - hopStart),
                 0xf0c060
             )
@@ -947,6 +966,7 @@ while task.wait() do
     if closestCandy then
         if closestCandy ~= lastCandyRef then
             candyCollected = candyCollected + 1
+            candySinceLastDoor = candySinceLastDoor + 1
             lastCandyRef = closestCandy
         end
         setStatus("Collecting candy...")
