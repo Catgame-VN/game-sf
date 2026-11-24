@@ -1,6 +1,6 @@
 --[[
 CatLazy Auto Candy
-v7.3: v7.2 + candy per-door display (log + stat + webhook)
+v7.4: v7.3 + luu webhook bang writefile/readfile
 ]]
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
@@ -16,6 +16,7 @@ local HOP_INTERVAL = 10 * 60
 local SCRIPT_URL = "https://raw.githubusercontent.com/Catgame-VN/game-sf/refs/heads/main/tsb%20autofarm"
 local MAX_LOG_LINES = 4
 local WEBHOOK_DOOR_NOTIFY = true
+local WEBHOOK_FILE = "CatLazy_webhook.txt"
 
 -- STATE
 local currentAction = "Finding candy..."
@@ -23,11 +24,34 @@ local hopStart = tick()
 local logLines = {}
 local guiVisible = true
 
+-- ===== WEBHOOK PERSISTENCE =====
+local function loadWebhook()
+    if not (isfile and readfile) then return "" end
+    local ok, content = pcall(function()
+        if isfile(WEBHOOK_FILE) then
+            return readfile(WEBHOOK_FILE)
+        end
+        return ""
+    end)
+    if ok and content then
+        return (content:gsub("^%s+", ""):gsub("%s+$", ""))
+    end
+    return ""
+end
+
+local function saveWebhook(url)
+    if not writefile then return false end
+    local ok = pcall(function()
+        writefile(WEBHOOK_FILE, url or "")
+    end)
+    return ok
+end
+
 -- STATS + WEBHOOK
 local candyCollected = 0
 local doorsKnocked = 0
 local lastCandyRef = nil
-local webhookUrl = ""
+local webhookUrl = loadWebhook()
 local candySinceLastDoor = 0
 local lastDoorCandy = 0
 
@@ -509,6 +533,14 @@ wStroke.Thickness = 1
 wStroke.Transparency = 0.6
 wStroke.Parent = webhookBtn
 
+-- restore UI state neu load duoc webhook tu file
+if webhookUrl ~= "" then
+    wStroke.Color = C.success
+    webhookBtn.Text = "Webhook: ON"
+    webhookBtn.TextColor3 = C.success
+    addLog("Webhook loaded tu file")
+end
+
 -- ===== WEBHOOK DIALOG =====
 local webhookGui = Instance.new("ScreenGui")
 webhookGui.Name = "CatLazyWebhook"
@@ -568,7 +600,7 @@ local dHint = Instance.new("TextLabel")
 dHint.Size = UDim2.new(1, -32, 0, 14)
 dHint.Position = UDim2.new(0, 16, 0, 40)
 dHint.BackgroundTransparency = 1
-dHint.Text = "Paste webhook URL de nhan thong bao khi hop + knock"
+dHint.Text = "Paste webhook URL (luu tu dong vao file)"
 dHint.TextColor3 = C.textDim
 dHint.TextSize = 10
 dHint.Font = Enum.Font.Gotham
@@ -664,11 +696,12 @@ dSaveBtn.MouseButton1Click:Connect(function()
         return
     end
     webhookUrl = url
+    saveWebhook(url)
     if url ~= "" then
         wStroke.Color = C.success
         webhookBtn.Text = "Webhook: ON"
         webhookBtn.TextColor3 = C.success
-        addLog("Webhook saved")
+        addLog("Webhook saved + luu file")
     else
         wStroke.Color = C.accent
         webhookBtn.Text = "Set Webhook"
@@ -708,7 +741,6 @@ local function refreshStatus()
     progressFill.Size = UDim2.new(pct, 0, 1, 0)
     progressFill.BackgroundColor3 = pct < 0.1 and C.danger or C.accent
 
-    -- hiển thị candy tổng + candy cửa vừa xong
     local candyPart = "Candy: " .. candyCollected
     if doorsKnocked > 0 then
         candyPart = candyPart .. " (+" .. lastDoorCandy .. ")"
@@ -857,7 +889,6 @@ end
 
 -- ===== KNOCK DOOR =====
 local function knockDoor(prompt, part, character, root, humanoid)
-    -- capture candy từ cửa trước, reset counter
     if doorsKnocked > 0 then
         lastDoorCandy = candySinceLastDoor
         addLog("Prev door: +" .. lastDoorCandy .. " candy")
@@ -866,7 +897,6 @@ local function knockDoor(prompt, part, character, root, humanoid)
     end
     candySinceLastDoor = 0
 
-    -- xoay character nhìn thẳng cửa
     pcall(function()
         local doorPos = part.Position
         local standPos = doorPos + (doorPos - root.Position).Unit * 5 + Vector3.new(0, 3, 0)
@@ -876,14 +906,12 @@ local function knockDoor(prompt, part, character, root, humanoid)
 
     task.wait(0.25)
 
-    -- aim cam vào cửa
     local savedCam = aimCameraAt(part)
     task.wait(0.08)
     aimCameraAt(part)
 
     setStatus("Knocking door...")
 
-    -- fire prompt
     local ok = pcall(function()
         fireproximityprompt(prompt)
     end)
@@ -891,7 +919,6 @@ local function knockDoor(prompt, part, character, root, humanoid)
     if ok then
         doorsKnocked = doorsKnocked + 1
 
-        -- verify busy bật lên
         local waited = 0
         while waited < 1.5 do
             task.wait(0.1)
@@ -899,7 +926,6 @@ local function knockDoor(prompt, part, character, root, humanoid)
             if isBusy(character) then break end
         end
 
-        -- webhook báo cáo sau knock
         if WEBHOOK_DOOR_NOTIFY and webhookUrl ~= "" then
             sendWebhook(
                 "Door Knocked",
@@ -914,7 +940,6 @@ local function knockDoor(prompt, part, character, root, humanoid)
         addLog("Fire failed")
     end
 
-    -- restore cam
     restoreCamera(savedCam)
 
     return ok
