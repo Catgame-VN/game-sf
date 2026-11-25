@@ -1,3 +1,10 @@
+--[[
+Royal Follow V6.3 - Merged & Optimized
+- Default: Height = -8 (bay duoi target), AutoAttack + AutoToolSpam ON
+- Auto attack punch + auto tool spam trong Heartbeat
+- Merged GUI from V6.2 with Logic from V6.3
+]]
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
@@ -8,7 +15,7 @@ local PlayerGui = Me:WaitForChild("PlayerGui")
 local Backpack = Me:WaitForChild("Backpack")
 
 local CONFIG = {
-    Side = 5, Height = 5, Behind = 5, -- X/right, Y/up, Z/behind
+    Side = 0, Height = -8, Behind = 3, -- mac dinh bay DUOI target
     Mode = "PROTECT", FaceFollowTarget = false, AimY = false,
     AutoRushOnEquip = true, DisableOwnMovement = true,
     DamageReturn = true, DamagePercent = 1,
@@ -20,13 +27,16 @@ local CONFIG = {
     FollowResponse = 8, FollowLookAhead = 0,
     FlightMaxSpeed=100, AntiDelayHitbox=true, HitboxLeadTime=0.08, HitboxMaxLead=12,
     UISound=true, UISoundVolume=0.35,
-    MaxTargetY = 200, Friendly = {},
+    MaxTargetY = 500, Friendly = {},
     AirStand = true, FootPad = true,
+    AutoAttack = true, AutoAttackInterval = 0.15,
+    AutoToolSpam = true, AutoToolInterval = 0.3,
 }
-local NewDefaults={FollowResponse=8,FollowLookAhead=0,MaxTargetY=200,
+local NewDefaults={FollowResponse=8,FollowLookAhead=0,MaxTargetY=500,
     FlightMaxSpeed=100,AntiDelayHitbox=true,HitboxLeadTime=0.08,HitboxMaxLead=12,
     UISound=true,UISoundVolume=0.35,
-    Friendly={},AirStand=true,FootPad=true}
+    Friendly={},AirStand=true,FootPad=true,
+    AutoAttack=true,AutoAttackInterval=0.15,AutoToolSpam=true,AutoToolInterval=0.3}
 local function newSkill(name, cooldown, hold)
     return {Name=name, Delay=0.01, TravelTime=0.01, ReturnTime=0.01,
         BehindHold=hold, ReturnDelay=0, Cooldown=cooldown, Radius=120, Approach=3}
@@ -94,8 +104,6 @@ local function followCFrame(root)
     return CFrame.lookAt(pos, pos+forward)
 end
 local function skillCFrame(root, distance)
-    -- Capture yaw at cast start: the target's shaking/turning body never
-    -- rotates our character. Current position is still read without Lerp.
     local forward=(Rush and Rush.CastForward) or flatUnit(root.CFrame.LookVector)
     if CONFIG.AntiDelayHitbox then
         local velocity=root.AssemblyLinearVelocity
@@ -104,7 +112,6 @@ local function skillCFrame(root, distance)
         local lead=horizontal*CONFIG.HitboxLeadTime
         if lead.Magnitude>CONFIG.HitboxMaxLead then lead=lead.Unit*CONFIG.HitboxMaxLead end
         local pos=root.Position+lead+direction*distance
-        -- Fixed cast-facing avoids yaw oscillations; no target body rotation.
         return CFrame.lookAt(pos,pos-forward)
     end
     local pos=root.Position-forward*distance
@@ -150,7 +157,6 @@ local function updateStandPad()
             FootPad.Name="SmoothFollow_FootPad"
             FootPad.Size=Vector3.new(5,0.15,5)
             FootPad.Anchored=true
-            -- Visual pad only: never collides with or traps another player.
             FootPad.CanCollide=false; FootPad.CanTouch=false; FootPad.CanQuery=false
             FootPad.Transparency=0.55
             FootPad.Material=Enum.Material.Neon
@@ -171,7 +177,6 @@ local function updateStandPad()
             or state==Enum.HumanoidStateType.FallingDown then
             hum:ChangeState(Enum.HumanoidStateType.Running)
         end
-        -- Reuse the character's idle asset, leaving Action-priority skills free.
         if os.clock()>=NextIdleCheck then
             NextIdleCheck=os.clock()+0.25
             local animate=char:FindFirstChild("Animate")
@@ -222,7 +227,6 @@ local function smoothFollow(root,dt)
     if FollowRoot~=root or not FollowPose then
         FollowRoot=root; FollowPose=goal; FollowLastPosition=root.Position
     else
-        -- Intentionally lag turns/jumps gently instead of rigidly pinning.
         FollowPose=FollowPose:Lerp(goal,1-math.exp(-CONFIG.FollowResponse*dt))
         FollowLastPosition=root.Position
     end
@@ -243,7 +247,6 @@ local function getHeldTool()
     end
 end
 local function getOwnedTool(name)
-    -- Backpack first avoids a nil first element ending ipairs on respawn.
     for _, parent in ipairs({Backpack, Me.Character}) do
         for _, o in ipairs(parent:GetChildren()) do
             if o:IsA("Tool") and o.Name == name then return o end
@@ -288,10 +291,8 @@ local function selectSkillTarget(radius)
             if d <= best then best, result = d, p end
         end
     end
-    -- No fallback to the followed/protected player.
     return result
 end
-
 local function releaseOwnCharacter()
     removeFlight()
     resetFollowPose()
@@ -323,13 +324,10 @@ local function checkDamage(health)
     local r = Rush
     local _,_,currentHum=alive(Me)
     if not currentHum then return end
-    -- Read MODEL.Humanoid.Health/MaxHealth directly, never a GUI health bar.
     health=currentHum.Health
     if not r or not CONFIG.DamageReturn or health <= 0 then return end
     if r.Phase ~= "HOLD" and r.Phase ~= "RETURN_DELAY"
         and r.Phase ~= "RETREAT_OUT" and r.Phase ~= "RETREAT_WAIT" then return end
-    -- For a Tool action, only check while that Tool is still held. Punch/Dash
-    -- also use this safety rule without requiring a Tool instance.
     if r.Kind == "TOOL" and not getHeldTool() then return end
     r.HealthPeak = math.max(r.HealthPeak or health, health)
     if r.HealthPeak-health > currentHum.MaxHealth*CONFIG.DamagePercent/100 then
@@ -394,20 +392,14 @@ beginAction = function(kind, tool, respectCooldown, customHold)
         or (respectCooldown and not tool.Enabled)) then return false end
     local slot, def = definition(tool)
     local now = os.clock()
-    if tool and respectCooldown and now < (Cooldowns[tool] or 0) then
-        status("TOOL DANG COOLDOWN"); return false
-    end
-    -- Punch during the retreat is queued until the optional minimum wait.
+    if tool and respectCooldown and now < (Cooldowns[tool] or 0) then return false end
     if kind == "PUNCH" and Rush and Rush.Phase == "RETREAT_WAIT"
         and now-Rush.PhaseStart < CONFIG.RetreatMinWait then
         local pending = Rush.PendingPunch
         Rush.PendingPunch = {Hold=math.min(CONFIG.PunchMax,
             (pending and pending.Hold or 0)+CONFIG.PunchHold)}
-        status("DA NHAN PUNCH - CHO HET " .. CONFIG.RetreatMinWait .. "s")
         return true
     end
-    -- Same punch target: reset the clock, grow this combo's hold budget.
-    -- It never grows past PunchMax, even if the player repeatedly taps.
     if kind == "PUNCH" and Rush and Rush.Kind == "PUNCH"
         and (Rush.Phase == "HOLD" or Rush.Phase == "DELAY" or Rush.Phase == "OUT")
         and eligible(Rush.EnemyPlayer) then
@@ -419,22 +411,18 @@ beginAction = function(kind, tool, respectCooldown, customHold)
         return true
     end
     local wasRetreat=Rush and (Rush.Phase=="RETREAT_WAIT" or Rush.Phase=="RETREAT_OUT")
-    -- A punch from the retreat goes back to that SAME target, even if a new
-    -- player has become closer. Do not immediately retreat a second time.
     local previousEnemy=wasRetreat and Rush.EnemyPlayer or nil
     local previousApproach=wasRetreat and Rush.Settings.Approach or nil
     local enemy=(kind=="PUNCH" and previousEnemy and eligible(previousEnemy))
         and previousEnemy or selectSkillTarget(def.Radius)
     if not enemy then
         Rush=nil
-        status(CONFIG.Mode == "PROTECT" and "BAO VE: KHONG CO MUC TIEU KHAC" or "MUC TIEU CHUA SONG")
         return false
     end
     local hold = kind == "PUNCH" and math.min(CONFIG.PunchMax, customHold or CONFIG.PunchHold)
         or kind == "DASH" and CONFIG.DashHold or def.BehindHold
     local delay = kind == "PUNCH" and CONFIG.PunchDelay
         or kind == "DASH" and CONFIG.DashDelay or def.Delay
-    -- Replace the old action as one transaction: no delayed tasks survive it.
     if tool then Cooldowns[tool]=now+def.Cooldown end
     Rush = {Kind=kind, Tool=tool, Slot=slot, EnemyPlayer=enemy,
         CastForward=flatUnit(select(2,alive(enemy)).CFrame.LookVector),
@@ -445,15 +433,12 @@ beginAction = function(kind, tool, respectCooldown, customHold)
             Approach=kind=="PUNCH" and previousApproach or def.Approach}}
     resetFollowPose()
     setFlightEnabled(false)
-    -- Zero-delay Punch is placed during the input callback itself. There is
-    -- no task.defer/wait, DELAY phase or extra outbound frame in this path.
     if delay<=0 and (kind=="PUNCH" or (tool and tool.Name=="Normal Punch")) then
         local _,enemyRoot=alive(enemy)
         local _,_,hum=alive(Me)
         placeOwnCharacter(skillCFrame(enemyRoot,Rush.Settings.Approach))
         Rush.Phase="HOLD"; Rush.PhaseStart=now; Rush.HealthPeak=hum.Health
     end
-    status(kind .. " | CHO " .. delay .. "s")
     return true
 end
 local function updateMovement(dt)
@@ -470,11 +455,10 @@ local function updateMovement(dt)
     if not c then Rush=nil; releaseOwnCharacter(); return end
     if Suspended then Suspended=false; status("PLAYER HOI SINH - BAM TIEP") end
     local r, now = Rush, os.clock()
-    -- Normal following is rendered once, not snapped in two competing loops.
     if not r then smoothFollow(targetRoot,dt); return end
     setFlightEnabled(r.Phase=="DELAY")
     if not eligible(r.EnemyPlayer) and r.Phase ~= "RETURN" then
-        forceReturn("BO QUA TARGET FRIENDLY / Y QUA XA - DUNG CANH PLAYER BAM", true)
+        forceReturn("BO QUA TARGET FRIENDLY / Y QUA XA", true)
         return
     end
     local _, enemyRoot = alive(r.EnemyPlayer)
@@ -486,7 +470,6 @@ local function updateMovement(dt)
         if r.Kind=="PUNCH" or r.Kind=="DASH" or def.TravelTime<=0 then
             placeOwnCharacter(skillCFrame(enemyRoot,def.Approach))
             r.Phase="HOLD"; r.PhaseStart=now; r.HealthPeak=hum.Health
-            status("SAU MUC TIEU | " .. def.BehindHold .. "s")
             return
         end
         r.Phase="OUT"; r.PhaseStart=now; r.StartCF=root.CFrame
@@ -496,7 +479,6 @@ local function updateMovement(dt)
         placeOwnCharacter(r.StartCF:Lerp(skillCFrame(enemyRoot, def.Approach), t))
         if t >= 1 then
             r.Phase="HOLD"; r.PhaseStart=now; r.HealthPeak=hum.Health
-            status("SAU MUC TIEU | " .. def.BehindHold .. "s")
         end
     elseif r.Phase == "HOLD" or r.Phase == "RETURN_DELAY" then
         checkDamage(hum.Health)
@@ -505,24 +487,22 @@ local function updateMovement(dt)
             and r.EnemyPlayer.Character:FindFirstChildOfClass("Tool") then
             r.Retreated=true; r.Phase="RETREAT_OUT"; r.PhaseStart=now
             r.StartCF=root.CFrame
-            -- Fixed world position: stay still at the retreat destination.
             local retreatPos=enemyRoot.Position-flatUnit(enemyRoot.CFrame.LookVector)*CONFIG.RetreatDistance
             r.RetreatCF=CFrame.lookAt(retreatPos,retreatPos+flatUnit(enemyRoot.CFrame.LookVector))
-            status("MUC TIEU CAM TOOL - LUI " .. CONFIG.RetreatDistance .. " STUDS")
             return
         end
         placeOwnCharacter(skillCFrame(enemyRoot, def.Approach))
         if r.Phase == "HOLD" and elapsed >= def.BehindHold then
             r.Phase="RETURN_DELAY"; r.PhaseStart=now
         elseif r.Phase == "RETURN_DELAY" and elapsed >= def.ReturnDelay then
-            forceReturn("HET THOI GIAN - QUAY VE", false)
+            forceReturn("HET THOI GIAN", false)
         end
     elseif r.Phase == "RETREAT_OUT" then
         checkDamage(hum.Health)
         if Rush ~= r then return end
         local t=math.clamp(elapsed/math.max(0.01, CONFIG.RetreatTime), 0, 1)
         placeOwnCharacter(r.StartCF:Lerp(r.RetreatCF, t))
-        if t >= 1 then r.Phase="RETREAT_WAIT"; r.PhaseStart=now; status("CHO O VI TRI LUI") end
+        if t >= 1 then r.Phase="RETREAT_WAIT"; r.PhaseStart=now end
     elseif r.Phase == "RETREAT_WAIT" then
         checkDamage(hum.Health)
         if Rush ~= r then return end
@@ -531,17 +511,16 @@ local function updateMovement(dt)
             local hold=r.PendingPunch.Hold
             beginAction("PUNCH", nil, false, hold)
         elseif elapsed >= CONFIG.RetreatHold then
-            forceReturn("HET THOI GIAN LUI - QUAY VE", false)
+            forceReturn("HET THOI GIAN LUI", false)
         end
     elseif r.Phase == "RETURN" then
         local t=math.clamp(elapsed/math.max(0.01, def.ReturnTime), 0, 1)
         placeOwnCharacter(r.StartCF:Lerp(followCFrame(targetRoot), t))
-        if t >= 1 then Rush=nil; resetFollowPose(); status("DANG BAM @" .. SelectedPlayer.Name) end
+        if t >= 1 then Rush=nil; resetFollowPose() end
     end
 end
 
--- PORTABLE CONFIG: SF6|GUID|checksum|hex(JSON). No loadstring/eval.
--- The checksum detects accidental edits; it is not a security signature.
+-- PORTABLE CONFIG: SF6|GUID|checksum|hex(JSON)
 local ConfigBounds = {
     Side={-250,250}, Height={-100,100}, Behind={-250,250}, DamagePercent={0.01,100},
     RetreatDistance={1,500}, RetreatTime={0.01,20}, RetreatHold={0,120},
@@ -549,6 +528,7 @@ local ConfigBounds = {
     PunchDelay={0,15}, DashDelay={0,15}, DashHold={0.1,20},
     FollowResponse={5,100}, FollowLookAhead={0,0.05}, MaxTargetY={1,1000},
     FlightMaxSpeed={10,500}, HitboxLeadTime={0,0.3}, HitboxMaxLead={0,40}, UISoundVolume={0,1},
+    AutoAttackInterval={0.05,2}, AutoToolInterval={0.1,3},
 }
 local SkillBounds = {
     Delay={0,15}, TravelTime={0,20}, ReturnTime={0.01,20},
@@ -568,7 +548,7 @@ local function validateConfig(data)
     local c, ss = {}, {}
     for k,v in pairs(CONFIG) do
         local x=data.Config[k]
-        if x==nil and NewDefaults[k]~=nil then x=copyTable({value=NewDefaults[k]}).value end
+        if x==nil and NewDefaults[k]~=nil then x=NewDefaults[k] end
         if k=="Friendly" then
             if type(x)~="table" then return nil end
             local count=0
@@ -635,7 +615,7 @@ end
 
 -- GUI: two columns, left navigation + large right page.
 local previous=PlayerGui:FindFirstChild("SmoothFollowV6")
-if previous then previous:Destroy() end -- its Destroying handler cleans old controller
+if previous then previous:Destroy() end
 local C={Bg=Color3.fromRGB(47,47,50), Panel=Color3.fromRGB(60,60,64),
     Input=Color3.fromRGB(76,76,80), Blue=Color3.fromRGB(133,119,85),
     Green=Color3.fromRGB(70,122,94), Red=Color3.fromRGB(139,73,76),
@@ -708,7 +688,7 @@ Main.ClipsDescendants=true
 Main:FindFirstChildOfClass("UIStroke").Thickness=2
 ClickSound=instance("Sound",Screen,{Name="RoyalToggleSound",SoundId="rbxasset://sounds/electronicpingshort.wav",Volume=0.35})
 local Scale=instance("UIScale",Main,{Scale=1})
-local Header=label(Main,"ROYAL FOLLOW  /  V6.2",20,5,600,27,21)
+local Header=label(Main,"ROYAL FOLLOW  /  V6.3",20,5,600,27,21)
 Header.Active=true
 local Credit=label(Main,"Cre mamaScript / Funierx",20,33,600,18,12,C.Gold)
 local collapseButton, collapsed=false,false
@@ -741,7 +721,6 @@ StatusLabel=label(Main,"SAN SANG",20,463,775,26,13,C.Muted)
 local Mini=frame(Main,0,0,1,1,C.Panel); Mini.Visible=false
 local slotButtons,miniButtons={},{}
 local equipSlot
--- Hidden labels retain cooldown bookkeeping; compact mode has no buttons.
 for i=1,4 do miniButtons[i]=label(Mini,"",0,0,1,1,1) end
 local initiallyPlaced=false
 local function updateScale()
@@ -758,11 +737,10 @@ end
 local closeButton
 local function toggleCollapse()
     collapsed=not collapsed
-    -- Top-left anchor, fixed Position and fixed scale: no recenter/jump.
     Main.Size=UDim2.fromOffset(collapsed and 250 or 860,collapsed and 50 or 500)
     Sidebar.Visible=not collapsed; StatusLabel.Visible=not collapsed; Mini.Visible=false
     Credit.Visible=not collapsed
-    Header.Text=collapsed and "ROYAL FOLLOW  +" or "ROYAL FOLLOW  /  V6.2"
+    Header.Text=collapsed and "ROYAL FOLLOW  +" or "ROYAL FOLLOW  /  V6.3"
     Header.Size=UDim2.fromOffset(collapsed and 222 or 600,collapsed and 37 or 27)
     Header.Position=UDim2.fromOffset(14,collapsed and 6 or 5)
     Header.TextSize=collapsed and 16 or 21
@@ -779,7 +757,6 @@ local function beginGuiDrag(input,scrolling)
             Scroller=scrolling,WasScrolling=scrolling and scrolling.ScrollingEnabled}
     end
 end
--- Bind backgrounds and labels, preserving buttons, text input and scrollers.
 local function bindDragSurface(o)
     if o:IsA("Frame") or o:IsA("TextLabel") then
         o.Active=true
@@ -796,7 +773,6 @@ connect(UIS.InputChanged,function(input)
     if input~=drag.Input and not (drag.Input.UserInputType==Enum.UserInputType.MouseButton1
         and input.UserInputType==Enum.UserInputType.MouseMovement) then return end
     local delta=input.Position-drag.Start
-    -- Vertical touch movement keeps scrolling; horizontal movement drags GUI.
     if drag.Scroller and input.UserInputType==Enum.UserInputType.Touch and not drag.Moved
         and math.abs(delta.X)<=math.abs(delta.Y)*1.5 then return end
     if drag.Scroller and delta.Magnitude>5 then drag.Scroller.ScrollingEnabled=false end
@@ -888,7 +864,6 @@ TouchLabel=label(MainPage,"PunchButton / DashButton: dang tim...",8,386,625,25,1
 local help=label(MainPage,"Friendly xanh khong target o ca 2 che do. Mau doc truc tiep tu Humanoid.",8,419,620,34,13,C.Muted)
 help.TextWrapped=true; help.TextTruncate=Enum.TextTruncate.None
 
--- Grouped sections: FOLLOW, INPUT/SKILLS, HEALTH/TARGET, RETREAT.
 local function section(title,y)
     local bar=frame(ConfigPage,8,y,625,36,C.Panel)
     label(bar,title,12,3,600,30,19)
@@ -1002,7 +977,6 @@ assignTool=function(name,slot)
     local replaced=Slots[slot].Name
     Slots[slot].Name=name
     if old and old~=slot then Slots[old].Name=replaced end
-    -- A changed Tool gets a fresh 2s default; original named skills keep 1/4s.
     if replaced~=name then
         Slots[slot].BehindHold=name=="Normal Punch" and 1 or name=="Consecutive Punches" and 4 or 2
         if old and old~=slot then
@@ -1046,7 +1020,6 @@ button(CodePage,"LOAD CAU HINH",8,499,625,50,function()
     if UIS:GetFocusedTextBox() then UIS:GetFocusedTextBox():ReleaseFocus() end
     local c,ss,id=decodeCode(LoadBox.Text)
     if not c then status("MA LOI / THIEU / KHONG DUNG PHIEN BAN V6"); return end
-    -- Validate everything first; only then stop and replace all values.
     local wasFollowing=Following
     stopFollowing(); CONFIG=c; Slots=ss
     TargetY=setmetatable({}, {__mode="k"}); BlockedY=setmetatable({}, {__mode="k"})
@@ -1059,7 +1032,6 @@ button(CodePage,"LOAD CAU HINH",8,499,625,50,function()
     status("DA LOAD CAU HINH ID "..id)
 end,C.Green)
 
--- Drag/drop cards with touch-safe matching and click suppression on release.
 local ToolDrag, Ghost
 local clickSuppression=0
 local function pointerEnds(input,original)
@@ -1133,8 +1105,6 @@ RefreshCatalog=function()
     ToolList.CanvasSize=UDim2.fromOffset(#sorted*195,0)
 end
 
--- Tool observers: they never invoke remotes or damage. GUI casting is gated
--- by the same mode/target selection before EquipTool / Activate is called.
 local function bindTool(tool)
     if not tool:IsA("Tool") or ToolLinks[tool] then return end
     local links={}; ToolLinks[tool]=links
@@ -1146,7 +1116,6 @@ local function bindTool(tool)
     end)
     links[2]=tool.Activated:Connect(function()
         if os.clock()<(SuppressActivation[tool] or 0) then return end
-        -- A real new activation replaces the previous action.
         beginAction("TOOL",tool,false)
     end)
     links[3]=tool.Destroying:Connect(function()
@@ -1171,11 +1140,9 @@ equipSlot=function(slot)
     if tool.Parent~=c then hum:EquipTool(tool) end
     if not beginAction("TOOL",tool,true) then return end
     SuppressActivation[tool]=os.clock()+0.05
-    tool:Activate() -- actual ability remains governed by the game's combat system
+    tool:Activate()
 end
 
--- Bind the actual buttons, even nested in Player/JumpButton folders.
--- Restricted to TouchGui > TouchControlFrame: avoids matching our own UI.
 local function scanTouch()
     local punch,dash=false,false
     local valid={}
@@ -1257,8 +1224,6 @@ if Me.Character then bindCharacter(Me.Character) end
 bindCamera(); RefreshControls(); RefreshEditor(); RefreshSlots(); RefreshCatalog(); refreshPlayers(); scanTouch()
 showPage("Main")
 
--- State transitions run ONCE per simulation step. Render pass only pins the
--- current pose; it cannot advance timers twice in a single frame.
 connect(RunService.PreSimulation,updateMovement)
 RunService:UnbindFromRenderStep(renderBinding)
 RunService:BindToRenderStep(renderBinding,Enum.RenderPriority.Camera.Value-1,function(dt)
@@ -1283,9 +1248,28 @@ connect(RunService.Heartbeat,function()
         local hum=char and char:FindFirstChildOfClass("Humanoid")
         HealthLabel.Text=hum and string.format("HP  %.1f / %.1f",hum.Health,hum.MaxHealth) or "HP  --"
     end
+    
+    -- AUTO ATTACK & TOOL SPAM LOGIC
+    if Following and SelectedPlayer and alive(SelectedPlayer) then
+        if CONFIG.AutoAttack then
+            if now - (lastAutoAttack or 0) >= CONFIG.AutoAttackInterval then
+                beginAction("PUNCH", nil, false)
+                lastAutoAttack = now
+            end
+        end
+        if CONFIG.AutoToolSpam then
+            if now - (lastAutoTool or 0) >= CONFIG.AutoToolInterval then
+                local tool = getHeldTool()
+                if tool then
+                    beginAction("TOOL", tool, false)
+                    lastAutoTool = now
+                end
+            end
+        end
+    end
+
     if now>=nextScan then
         nextScan=now+0.75; scanTools(); scanTouch(); RefreshCatalog()
-        -- Disconnect tools removed from our inventory, not just destroyed.
         for tool,links in pairs(ToolLinks) do
             if tool.Parent~=Backpack and tool.Parent~=Me.Character then
                 for _,c in ipairs(links) do c:Disconnect() end
@@ -1304,4 +1288,4 @@ connect(RunService.Heartbeat,function()
     end
 end)
 status("SAN SANG - CHON PLAYER, SAU DO BAT BAM")
-print("[Royal Follow V6.2] Cre mamaScript / Funierx | Physical Flight + Velocity Prediction")
+print("[Royal Follow V6.3] Cre mamaScript / Funierx | Physical Flight + Velocity Prediction + Auto Spam")
