@@ -1,99 +1,1307 @@
-local InsertService = game:GetService("InsertService")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+local Http = game:GetService("HttpService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Me = Players.LocalPlayer
+local PlayerGui = Me:WaitForChild("PlayerGui")
+local Backpack = Me:WaitForChild("Backpack")
 
-local Services = {
-	Workspace = game:GetService("Workspace"),
-	MaterialService = game:GetService("MaterialService"),
-	ReplicatedStorage = game:GetService("ReplicatedStorage"),
-	ServerScriptService = game:GetService("ServerScriptService"),
-	ServerStorage = game:GetService("ServerStorage"),
-	StarterGui = game:GetService("StarterGui"),
-	StarterPlayer = game:GetService("StarterPlayer"),
-	ReplicatedFirst = game:GetService("ReplicatedFirst"),
-	Teams = game:GetService("Teams"),
-	Lighting = game:GetService("Lighting")
+local CONFIG = {
+    Side = 5, Height = 5, Behind = 5, -- X/right, Y/up, Z/behind
+    Mode = "PROTECT", FaceFollowTarget = false, AimY = false,
+    AutoRushOnEquip = true, DisableOwnMovement = true,
+    DamageReturn = true, DamagePercent = 1,
+    RetreatEnabled = false, RetreatDistance = 50, RetreatTime = 0.1,
+    RetreatHold = 30, RetreatMinWait = 1,
+    PunchHold = 0.5, PunchMax = 1.5, PunchDelay = 0,
+    DashDelay = 0.3, DashHold = 0.5,
+    TouchPunch = true, TouchDash = true,
+    FollowResponse = 8, FollowLookAhead = 0,
+    FlightMaxSpeed=100, AntiDelayHitbox=true, HitboxLeadTime=0.08, HitboxMaxLead=12,
+    UISound=true, UISoundVolume=0.35,
+    MaxTargetY = 200, Friendly = {},
+    AirStand = true, FootPad = true,
 }
-
-local criticalAssets = { 
-	{id = 130190853038381, dest = Services.ServerScriptService},
+local NewDefaults={FollowResponse=8,FollowLookAhead=0,MaxTargetY=200,
+    FlightMaxSpeed=100,AntiDelayHitbox=true,HitboxLeadTime=0.08,HitboxMaxLead=12,
+    UISound=true,UISoundVolume=0.35,
+    Friendly={},AirStand=true,FootPad=true}
+local function newSkill(name, cooldown, hold)
+    return {Name=name, Delay=0.01, TravelTime=0.01, ReturnTime=0.01,
+        BehindHold=hold, ReturnDelay=0, Cooldown=cooldown, Radius=120, Approach=3}
+end
+local Slots = {
+    newSkill("Normal Punch", 1, 1), newSkill("Consecutive Punches", 3, 4),
+    newSkill("Shove", 2, 2), newSkill("Uppercut", 4, 2),
 }
+local FALLBACK = newSkill("Other Tool", 1, 2)
+Slots[1].Delay=0; Slots[1].TravelTime=0
+local SelectedPlayer, Rush = nil, nil
+local Following, Suspended, destroyed = false, false, false
+local ManagedChar, ManagedHum, SavedMotion, PartConnection, HealthConnection
+local SavedCollisions = {}
+local FootPad, IdleTrack, StateSaved
+local NextIdleCheck=0
+local FollowPose, FollowRoot, FollowLastPosition
+local FlightAttachment,FlightPosition,FlightOrientation,FlightRoot
+local TargetY=setmetatable({}, {__mode="k"})
+local BlockedY=setmetatable({}, {__mode="k"})
+local Connections, ToolLinks, TouchLinks = {}, {}, {}
+local Cooldowns = setmetatable({}, {__mode="k"})
+local SuppressEquip = setmetatable({}, {__mode="k"})
+local SuppressActivation = setmetatable({}, {__mode="k"})
+local EquippedAt = setmetatable({}, {__mode="k"})
+local SelectedSlot, PickedToolName = 1, nil
+local StatusLabel, TargetLabel, TouchLabel, HealthLabel, ModeButton, Screen, Main
+local RefreshSlots, RefreshCatalog, RefreshEditor, RefreshControls, refreshPlayers
+local cleanup, beginAction, forceReturn
+local renderBinding = "SmoothFollowV6_" .. Me.UserId
 
-local priorityAssets = {
-	{id = 99331435627755, dest = Services.ServerStorage},
+local function connect(signal, fn)
+    local c = signal:Connect(fn)
+    table.insert(Connections, c)
+    return c
+end
+local function status(s)
+    if StatusLabel then StatusLabel.Text = tostring(s) end
+end
+local function alive(player)
+    local c = player and player.Character
+    local r = c and c:FindFirstChild("HumanoidRootPart")
+    local h = c and c:FindFirstChildOfClass("Humanoid")
+    if c and r and h and h.Health > 0 and r:IsDescendantOf(workspace) then
+        return c, r, h
+    end
+end
+local function flatUnit(v)
+    local p = Vector3.new(v.X, 0, v.Z)
+    return p.Magnitude > 0.001 and p.Unit or Vector3.new(0, 0, -1)
+end
+local function facing(pos, to, allowY, fallback)
+    local d = to-pos
+    if not allowY then d = Vector3.new(d.X, 0, d.Z) end
+    if d.Magnitude < 0.001 then d = fallback or Vector3.new(0, 0, -1) end
+    if not allowY then d = flatUnit(d) end
+    return CFrame.lookAt(pos, pos+d.Unit)
+end
+local function followCFrame(root)
+    local forward = flatUnit(root.CFrame.LookVector)
+    local right = Vector3.new(-forward.Z, 0, forward.X)
+    local pos = root.Position + right*CONFIG.Side - forward*CONFIG.Behind
+        + Vector3.new(0, CONFIG.Height, 0)
+    if CONFIG.FaceFollowTarget then return facing(pos, root.Position, CONFIG.AimY, forward) end
+    return CFrame.lookAt(pos, pos+forward)
+end
+local function skillCFrame(root, distance)
+    -- Capture yaw at cast start: the target's shaking/turning body never
+    -- rotates our character. Current position is still read without Lerp.
+    local forward=(Rush and Rush.CastForward) or flatUnit(root.CFrame.LookVector)
+    if CONFIG.AntiDelayHitbox then
+        local velocity=root.AssemblyLinearVelocity
+        local horizontal=Vector3.new(velocity.X,0,velocity.Z)
+        local direction=horizontal.Magnitude>=3 and horizontal.Unit or forward
+        local lead=horizontal*CONFIG.HitboxLeadTime
+        if lead.Magnitude>CONFIG.HitboxMaxLead then lead=lead.Unit*CONFIG.HitboxMaxLead end
+        local pos=root.Position+lead+direction*distance
+        -- Fixed cast-facing avoids yaw oscillations; no target body rotation.
+        return CFrame.lookAt(pos,pos-forward)
+    end
+    local pos=root.Position-forward*distance
+    return CFrame.lookAt(pos,pos+forward)
+end
+local function removeFlight()
+    if FlightPosition then FlightPosition:Destroy(); FlightPosition=nil end
+    if FlightOrientation then FlightOrientation:Destroy(); FlightOrientation=nil end
+    if FlightAttachment then FlightAttachment:Destroy(); FlightAttachment=nil end
+    FlightRoot=nil
+end
+local function setFlightEnabled(enabled)
+    if FlightPosition then FlightPosition.Enabled=enabled end
+    if FlightOrientation then FlightOrientation.Enabled=enabled end
+end
+local function ensureFlight(root)
+    if FlightRoot==root and FlightPosition and FlightPosition.Parent then return end
+    removeFlight()
+    FlightRoot=root
+    FlightAttachment=Instance.new("Attachment"); FlightAttachment.Name="FollowFlightAttachment"; FlightAttachment.Parent=root
+    FlightPosition=Instance.new("AlignPosition")
+    FlightPosition.Name="FollowFlightPosition"
+    FlightPosition.Mode=Enum.PositionAlignmentMode.OneAttachment
+    FlightPosition.Attachment0=FlightAttachment
+    FlightPosition.RigidityEnabled=false; FlightPosition.ApplyAtCenterOfMass=true
+    FlightPosition.MaxForce=1000000; FlightPosition.MaxVelocity=CONFIG.FlightMaxSpeed
+    FlightPosition.Responsiveness=CONFIG.FollowResponse
+    FlightPosition.Position=root.Position; FlightPosition.Parent=root
+    FlightOrientation=Instance.new("AlignOrientation")
+    FlightOrientation.Name="FollowFlightOrientation"
+    FlightOrientation.Mode=Enum.OrientationAlignmentMode.OneAttachment
+    FlightOrientation.Attachment0=FlightAttachment
+    FlightOrientation.RigidityEnabled=false; FlightOrientation.MaxTorque=1000000
+    FlightOrientation.Responsiveness=CONFIG.FollowResponse
+    FlightOrientation.CFrame=root.CFrame; FlightOrientation.Parent=root
+end
+local function updateStandPad()
+    local char,root,hum=alive(Me)
+    if not char or not ManagedHum then return end
+    if CONFIG.FootPad then
+        if not FootPad or not FootPad.Parent then
+            FootPad=Instance.new("Part")
+            FootPad.Name="SmoothFollow_FootPad"
+            FootPad.Size=Vector3.new(5,0.15,5)
+            FootPad.Anchored=true
+            -- Visual pad only: never collides with or traps another player.
+            FootPad.CanCollide=false; FootPad.CanTouch=false; FootPad.CanQuery=false
+            FootPad.Transparency=0.55
+            FootPad.Material=Enum.Material.Neon
+            FootPad.Color=Color3.fromRGB(57,160,255)
+            FootPad.Parent=workspace
+        end
+        local bottom=root.Position.Y-root.Size.Y/2-hum.HipHeight
+        for _,name in ipairs({"LeftFoot","RightFoot","Left Leg","Right Leg"}) do
+            local foot=char:FindFirstChild(name)
+            if foot and foot:IsA("BasePart") then bottom=math.min(bottom,foot.Position.Y-foot.Size.Y/2) end
+        end
+        FootPad.CFrame=CFrame.new(root.Position.X,bottom-0.08,root.Position.Z)
+    elseif FootPad then FootPad:Destroy(); FootPad=nil end
+    if CONFIG.AirStand then
+        hum:SetStateEnabled(Enum.HumanoidStateType.Freefall,false)
+        local state=hum:GetState()
+        if state==Enum.HumanoidStateType.Freefall or state==Enum.HumanoidStateType.Jumping
+            or state==Enum.HumanoidStateType.FallingDown then
+            hum:ChangeState(Enum.HumanoidStateType.Running)
+        end
+        -- Reuse the character's idle asset, leaving Action-priority skills free.
+        if os.clock()>=NextIdleCheck then
+            NextIdleCheck=os.clock()+0.25
+            local animate=char:FindFirstChild("Animate")
+            local idle=animate and animate:FindFirstChild("idle")
+            local fall=animate and animate:FindFirstChild("fall")
+            local fallAnim=fall and fall:FindFirstChildWhichIsA("Animation",true)
+            local animator=hum:FindFirstChildOfClass("Animator")
+            local anim=idle and idle:FindFirstChildWhichIsA("Animation",true)
+            if animator then
+                for _,track in ipairs(animator:GetPlayingAnimationTracks()) do
+                    local name=track.Name:lower()
+                    if name=="fall" or name=="freefall" or name=="fallanim"
+                        or (fallAnim and track.Animation and track.Animation.AnimationId==fallAnim.AnimationId) then
+                        track:Stop(0.05)
+                    end
+                end
+            end
+            if not IdleTrack and anim and animator then
+                local ok,track=pcall(function() return animator:LoadAnimation(anim) end)
+                if ok then IdleTrack=track; IdleTrack.Looped=true; IdleTrack.Priority=Enum.AnimationPriority.Idle end
+            end
+        end
+        if IdleTrack and not IdleTrack.IsPlaying then IdleTrack:Play(0.08) end
+    else
+        if StateSaved~=nil then hum:SetStateEnabled(Enum.HumanoidStateType.Freefall,StateSaved) end
+        if IdleTrack and IdleTrack.IsPlaying then IdleTrack:Stop(0.08) end
+    end
+end
+local function placeOwnCharacter(cf)
+    local c, r = alive(Me)
+    if not c then return false end
+    local rootToPivot = r.CFrame:ToObjectSpace(c:GetPivot())
+    c:PivotTo(cf*rootToPivot)
+    r.AssemblyLinearVelocity = Vector3.zero
+    r.AssemblyAngularVelocity = Vector3.zero
+    updateStandPad()
+    return true
+end
+local function resetFollowPose()
+    FollowPose,FollowRoot,FollowLastPosition=nil,nil,nil
+end
+local function smoothFollow(root,dt)
+    local _,ownRoot=alive(Me)
+    if not ownRoot then return end
+    ensureFlight(ownRoot)
+    dt=math.clamp(dt or 1/60,0,0.1)
+    local goal=followCFrame(root)
+    if FollowRoot~=root or not FollowPose then
+        FollowRoot=root; FollowPose=goal; FollowLastPosition=root.Position
+    else
+        -- Intentionally lag turns/jumps gently instead of rigidly pinning.
+        FollowPose=FollowPose:Lerp(goal,1-math.exp(-CONFIG.FollowResponse*dt))
+        FollowLastPosition=root.Position
+    end
+    local lead=root.AssemblyLinearVelocity*CONFIG.FollowLookAhead
+    if lead.Magnitude>2 then lead=lead.Unit*2 end
+    setFlightEnabled(true)
+    FlightPosition.Position=FollowPose.Position+lead
+    FlightPosition.MaxVelocity=CONFIG.FlightMaxSpeed
+    FlightPosition.Responsiveness=CONFIG.FollowResponse
+    FlightOrientation.CFrame=FollowPose
+    FlightOrientation.Responsiveness=CONFIG.FollowResponse
+    updateStandPad()
+end
+local function getHeldTool()
+    local c = Me.Character
+    if c then
+        for _, o in ipairs(c:GetChildren()) do if o:IsA("Tool") then return o end end
+    end
+end
+local function getOwnedTool(name)
+    -- Backpack first avoids a nil first element ending ipairs on respawn.
+    for _, parent in ipairs({Backpack, Me.Character}) do
+        for _, o in ipairs(parent:GetChildren()) do
+            if o:IsA("Tool") and o.Name == name then return o end
+        end
+    end
+end
+local function getSlotByToolName(name)
+    for i, def in ipairs(Slots) do if def.Name == name and name ~= "" then return i end end
+end
+local function definition(tool)
+    local i = tool and getSlotByToolName(tool.Name)
+    return i, i and Slots[i] or FALLBACK
+end
+local function targetYAllowed(player)
+    local _,root=alive(player)
+    local _,reference=alive(SelectedPlayer)
+    if not root or not reference then return false end
+    local last=TargetY[root]
+    TargetY[root]=root.Position.Y
+    if last and math.abs(root.Position.Y-last)>CONFIG.MaxTargetY then BlockedY[root]=true end
+    if BlockedY[root] then return false end
+    return math.abs(root.Position.Y-reference.Position.Y)<=CONFIG.MaxTargetY
+end
+local function eligible(player)
+    if player == Me or not alive(player) then return false end
+    if CONFIG.Friendly[tostring(player.UserId)] then return false end
+    if not targetYAllowed(player) then return false end
+    if CONFIG.Mode == "ELIMINATE" then return player == SelectedPlayer end
+    return player ~= SelectedPlayer
+end
+local function selectSkillTarget(radius)
+    if CONFIG.Mode == "ELIMINATE" then
+        return eligible(SelectedPlayer) and SelectedPlayer or nil
+    end
+    local _, center = alive(SelectedPlayer)
+    if not center then return nil end
+    local best, result = radius, nil
+    for _, p in ipairs(Players:GetPlayers()) do
+        if eligible(p) then
+            local _, root = alive(p)
+            local d = (root.Position-center.Position).Magnitude
+            if d <= best then best, result = d, p end
+        end
+    end
+    -- No fallback to the followed/protected player.
+    return result
+end
+
+local function releaseOwnCharacter()
+    removeFlight()
+    resetFollowPose()
+    if FootPad then FootPad:Destroy(); FootPad=nil end
+    if IdleTrack then IdleTrack:Stop(0.08); IdleTrack:Destroy(); IdleTrack=nil end
+    if ManagedHum and ManagedHum.Parent and StateSaved~=nil then
+        ManagedHum:SetStateEnabled(Enum.HumanoidStateType.Freefall,StateSaved)
+    end
+    StateSaved=nil
+    NextIdleCheck=0
+    if PartConnection then PartConnection:Disconnect(); PartConnection=nil end
+    if HealthConnection then HealthConnection:Disconnect(); HealthConnection=nil end
+    if ManagedHum and ManagedHum.Parent and SavedMotion then
+        for k, v in pairs(SavedMotion) do ManagedHum[k] = v end
+    end
+    for part, value in pairs(SavedCollisions) do
+        if part.Parent then part.CanCollide = value end
+    end
+    SavedCollisions = {}
+    ManagedChar, ManagedHum, SavedMotion = nil, nil, nil
+end
+local function savePart(o)
+    if o:IsA("BasePart") then
+        if SavedCollisions[o] == nil then SavedCollisions[o] = o.CanCollide end
+        o.CanCollide = false
+    end
+end
+local function checkDamage(health)
+    local r = Rush
+    local _,_,currentHum=alive(Me)
+    if not currentHum then return end
+    -- Read MODEL.Humanoid.Health/MaxHealth directly, never a GUI health bar.
+    health=currentHum.Health
+    if not r or not CONFIG.DamageReturn or health <= 0 then return end
+    if r.Phase ~= "HOLD" and r.Phase ~= "RETURN_DELAY"
+        and r.Phase ~= "RETREAT_OUT" and r.Phase ~= "RETREAT_WAIT" then return end
+    -- For a Tool action, only check while that Tool is still held. Punch/Dash
+    -- also use this safety rule without requiring a Tool instance.
+    if r.Kind == "TOOL" and not getHeldTool() then return end
+    r.HealthPeak = math.max(r.HealthPeak or health, health)
+    if r.HealthPeak-health > currentHum.MaxHealth*CONFIG.DamagePercent/100 then
+        forceReturn("MAT MAU > " .. CONFIG.DamagePercent .. "% - QUAY VE", true)
+    end
+end
+local function prepareOwnCharacter()
+    local c, r, h = alive(Me)
+    if not c then return nil end
+    if ManagedChar ~= c then
+        releaseOwnCharacter()
+        ManagedChar, ManagedHum = c, h
+        StateSaved=h:GetStateEnabled(Enum.HumanoidStateType.Freefall)
+        SavedMotion = {AutoRotate=h.AutoRotate, WalkSpeed=h.WalkSpeed,
+            JumpPower=h.JumpPower, JumpHeight=h.JumpHeight}
+        for _, o in ipairs(c:GetDescendants()) do savePart(o) end
+        PartConnection = c.DescendantAdded:Connect(savePart)
+        HealthConnection = h.HealthChanged:Connect(checkDamage)
+    end
+    h.AutoRotate = false
+    if CONFIG.DisableOwnMovement then h.WalkSpeed=0; h.JumpPower=0; h.JumpHeight=0 end
+    for part in pairs(SavedCollisions) do
+        if part.Parent then part.CanCollide=false else SavedCollisions[part]=nil end
+    end
+    updateStandPad()
+    return c, r, h
+end
+local function stopFollowing()
+    Following, Suspended, Rush = false, false, nil
+    releaseOwnCharacter()
+    status("DA DUNG - NHAN VAT DUOC THA")
+end
+local function startFollowing()
+    if not SelectedPlayer then status("CHON PLAYER TRUOC"); return end
+    Following, Rush = true, nil
+    if not alive(SelectedPlayer) then
+        Suspended=true; releaseOwnCharacter(); status("CHO PLAYER HOI SINH"); return
+    end
+    Suspended=false
+    if prepareOwnCharacter() then placeOwnCharacter(followCFrame(select(2, alive(SelectedPlayer)))) end
+    status("DANG BAM @" .. SelectedPlayer.Name)
+end
+forceReturn = function(message, instant)
+    if not Rush then return end
+    local _, root = alive(Me)
+    local _, target = alive(SelectedPlayer)
+    if not root or not target then Rush=nil; releaseOwnCharacter(); return end
+    if instant then
+        Rush=nil
+        resetFollowPose()
+        placeOwnCharacter(followCFrame(target))
+    else
+        Rush.Phase="RETURN"; Rush.PhaseStart=os.clock(); Rush.StartCF=root.CFrame
+        Rush.PendingPunch=nil
+    end
+    status(message or "QUAY VE")
+end
+
+beginAction = function(kind, tool, respectCooldown, customHold)
+    if destroyed or not Following or not alive(Me) or not alive(SelectedPlayer) then return false end
+    if kind == "TOOL" and (not tool or tool.Parent ~= Me.Character
+        or (respectCooldown and not tool.Enabled)) then return false end
+    local slot, def = definition(tool)
+    local now = os.clock()
+    if tool and respectCooldown and now < (Cooldowns[tool] or 0) then
+        status("TOOL DANG COOLDOWN"); return false
+    end
+    -- Punch during the retreat is queued until the optional minimum wait.
+    if kind == "PUNCH" and Rush and Rush.Phase == "RETREAT_WAIT"
+        and now-Rush.PhaseStart < CONFIG.RetreatMinWait then
+        local pending = Rush.PendingPunch
+        Rush.PendingPunch = {Hold=math.min(CONFIG.PunchMax,
+            (pending and pending.Hold or 0)+CONFIG.PunchHold)}
+        status("DA NHAN PUNCH - CHO HET " .. CONFIG.RetreatMinWait .. "s")
+        return true
+    end
+    -- Same punch target: reset the clock, grow this combo's hold budget.
+    -- It never grows past PunchMax, even if the player repeatedly taps.
+    if kind == "PUNCH" and Rush and Rush.Kind == "PUNCH"
+        and (Rush.Phase == "HOLD" or Rush.Phase == "DELAY" or Rush.Phase == "OUT")
+        and eligible(Rush.EnemyPlayer) then
+        Rush.Settings.BehindHold=math.min(CONFIG.PunchMax,
+            Rush.Settings.BehindHold+CONFIG.PunchHold)
+        Rush.PhaseStart=now
+        if Rush.Phase=="OUT" then Rush.StartCF=select(2,alive(Me)).CFrame end
+        status("PUNCH + " .. CONFIG.PunchHold .. "s | " .. Rush.Settings.BehindHold .. "s")
+        return true
+    end
+    local wasRetreat=Rush and (Rush.Phase=="RETREAT_WAIT" or Rush.Phase=="RETREAT_OUT")
+    -- A punch from the retreat goes back to that SAME target, even if a new
+    -- player has become closer. Do not immediately retreat a second time.
+    local previousEnemy=wasRetreat and Rush.EnemyPlayer or nil
+    local previousApproach=wasRetreat and Rush.Settings.Approach or nil
+    local enemy=(kind=="PUNCH" and previousEnemy and eligible(previousEnemy))
+        and previousEnemy or selectSkillTarget(def.Radius)
+    if not enemy then
+        Rush=nil
+        status(CONFIG.Mode == "PROTECT" and "BAO VE: KHONG CO MUC TIEU KHAC" or "MUC TIEU CHUA SONG")
+        return false
+    end
+    local hold = kind == "PUNCH" and math.min(CONFIG.PunchMax, customHold or CONFIG.PunchHold)
+        or kind == "DASH" and CONFIG.DashHold or def.BehindHold
+    local delay = kind == "PUNCH" and CONFIG.PunchDelay
+        or kind == "DASH" and CONFIG.DashDelay or def.Delay
+    -- Replace the old action as one transaction: no delayed tasks survive it.
+    if tool then Cooldowns[tool]=now+def.Cooldown end
+    Rush = {Kind=kind, Tool=tool, Slot=slot, EnemyPlayer=enemy,
+        CastForward=flatUnit(select(2,alive(enemy)).CFrame.LookVector),
+        Phase="DELAY", PhaseStart=now, StartCF=nil,
+        Retreated=kind=="PUNCH" and previousEnemy==enemy,
+        Settings={Delay=delay, TravelTime=def.TravelTime, ReturnTime=def.ReturnTime,
+            BehindHold=hold, ReturnDelay=def.ReturnDelay,
+            Approach=kind=="PUNCH" and previousApproach or def.Approach}}
+    resetFollowPose()
+    setFlightEnabled(false)
+    -- Zero-delay Punch is placed during the input callback itself. There is
+    -- no task.defer/wait, DELAY phase or extra outbound frame in this path.
+    if delay<=0 and (kind=="PUNCH" or (tool and tool.Name=="Normal Punch")) then
+        local _,enemyRoot=alive(enemy)
+        local _,_,hum=alive(Me)
+        placeOwnCharacter(skillCFrame(enemyRoot,Rush.Settings.Approach))
+        Rush.Phase="HOLD"; Rush.PhaseStart=now; Rush.HealthPeak=hum.Health
+    end
+    status(kind .. " | CHO " .. delay .. "s")
+    return true
+end
+local function updateMovement(dt)
+    if destroyed or not Following then return end
+    local _, targetRoot = alive(SelectedPlayer)
+    if not targetRoot then
+        Rush=nil
+        if not Suspended or ManagedChar then
+            Suspended=true; releaseOwnCharacter(); status("PLAYER CHET - THA VA CHO HOI SINH")
+        end
+        return
+    end
+    local c, root, hum = prepareOwnCharacter()
+    if not c then Rush=nil; releaseOwnCharacter(); return end
+    if Suspended then Suspended=false; status("PLAYER HOI SINH - BAM TIEP") end
+    local r, now = Rush, os.clock()
+    -- Normal following is rendered once, not snapped in two competing loops.
+    if not r then smoothFollow(targetRoot,dt); return end
+    setFlightEnabled(r.Phase=="DELAY")
+    if not eligible(r.EnemyPlayer) and r.Phase ~= "RETURN" then
+        forceReturn("BO QUA TARGET FRIENDLY / Y QUA XA - DUNG CANH PLAYER BAM", true)
+        return
+    end
+    local _, enemyRoot = alive(r.EnemyPlayer)
+    local def = r.Settings
+    local elapsed = now-r.PhaseStart
+    if r.Phase == "DELAY" then
+        if elapsed < def.Delay then smoothFollow(targetRoot,dt); return end
+        setFlightEnabled(false)
+        if r.Kind=="PUNCH" or r.Kind=="DASH" or def.TravelTime<=0 then
+            placeOwnCharacter(skillCFrame(enemyRoot,def.Approach))
+            r.Phase="HOLD"; r.PhaseStart=now; r.HealthPeak=hum.Health
+            status("SAU MUC TIEU | " .. def.BehindHold .. "s")
+            return
+        end
+        r.Phase="OUT"; r.PhaseStart=now; r.StartCF=root.CFrame
+        return
+    elseif r.Phase == "OUT" then
+        local t=math.clamp(elapsed/math.max(0.01, def.TravelTime), 0, 1)
+        placeOwnCharacter(r.StartCF:Lerp(skillCFrame(enemyRoot, def.Approach), t))
+        if t >= 1 then
+            r.Phase="HOLD"; r.PhaseStart=now; r.HealthPeak=hum.Health
+            status("SAU MUC TIEU | " .. def.BehindHold .. "s")
+        end
+    elseif r.Phase == "HOLD" or r.Phase == "RETURN_DELAY" then
+        checkDamage(hum.Health)
+        if Rush ~= r or r.Phase == "RETURN" then return end
+        if CONFIG.RetreatEnabled and not r.Retreated
+            and r.EnemyPlayer.Character:FindFirstChildOfClass("Tool") then
+            r.Retreated=true; r.Phase="RETREAT_OUT"; r.PhaseStart=now
+            r.StartCF=root.CFrame
+            -- Fixed world position: stay still at the retreat destination.
+            local retreatPos=enemyRoot.Position-flatUnit(enemyRoot.CFrame.LookVector)*CONFIG.RetreatDistance
+            r.RetreatCF=CFrame.lookAt(retreatPos,retreatPos+flatUnit(enemyRoot.CFrame.LookVector))
+            status("MUC TIEU CAM TOOL - LUI " .. CONFIG.RetreatDistance .. " STUDS")
+            return
+        end
+        placeOwnCharacter(skillCFrame(enemyRoot, def.Approach))
+        if r.Phase == "HOLD" and elapsed >= def.BehindHold then
+            r.Phase="RETURN_DELAY"; r.PhaseStart=now
+        elseif r.Phase == "RETURN_DELAY" and elapsed >= def.ReturnDelay then
+            forceReturn("HET THOI GIAN - QUAY VE", false)
+        end
+    elseif r.Phase == "RETREAT_OUT" then
+        checkDamage(hum.Health)
+        if Rush ~= r then return end
+        local t=math.clamp(elapsed/math.max(0.01, CONFIG.RetreatTime), 0, 1)
+        placeOwnCharacter(r.StartCF:Lerp(r.RetreatCF, t))
+        if t >= 1 then r.Phase="RETREAT_WAIT"; r.PhaseStart=now; status("CHO O VI TRI LUI") end
+    elseif r.Phase == "RETREAT_WAIT" then
+        checkDamage(hum.Health)
+        if Rush ~= r then return end
+        placeOwnCharacter(r.RetreatCF)
+        if r.PendingPunch and elapsed >= CONFIG.RetreatMinWait then
+            local hold=r.PendingPunch.Hold
+            beginAction("PUNCH", nil, false, hold)
+        elseif elapsed >= CONFIG.RetreatHold then
+            forceReturn("HET THOI GIAN LUI - QUAY VE", false)
+        end
+    elseif r.Phase == "RETURN" then
+        local t=math.clamp(elapsed/math.max(0.01, def.ReturnTime), 0, 1)
+        placeOwnCharacter(r.StartCF:Lerp(followCFrame(targetRoot), t))
+        if t >= 1 then Rush=nil; resetFollowPose(); status("DANG BAM @" .. SelectedPlayer.Name) end
+    end
+end
+
+-- PORTABLE CONFIG: SF6|GUID|checksum|hex(JSON). No loadstring/eval.
+-- The checksum detects accidental edits; it is not a security signature.
+local ConfigBounds = {
+    Side={-250,250}, Height={-100,100}, Behind={-250,250}, DamagePercent={0.01,100},
+    RetreatDistance={1,500}, RetreatTime={0.01,20}, RetreatHold={0,120},
+    RetreatMinWait={0,30}, PunchHold={0.1,5}, PunchMax={0.1,10},
+    PunchDelay={0,15}, DashDelay={0,15}, DashHold={0.1,20},
+    FollowResponse={5,100}, FollowLookAhead={0,0.05}, MaxTargetY={1,1000},
+    FlightMaxSpeed={10,500}, HitboxLeadTime={0,0.3}, HitboxMaxLead={0,40}, UISoundVolume={0,1},
 }
-
-local secondaryAssets = {
+local SkillBounds = {
+    Delay={0,15}, TravelTime={0,20}, ReturnTime={0.01,20},
+    BehindHold={0,60}, ReturnDelay={0,20}, Cooldown={0,120}, Radius={1,2000}, Approach={0,40},
 }
-
-local function loadAsset(entry)
-	local success, loadedModel = pcall(function()
-		return InsertService:LoadAsset(entry.id)
-	end)
-
-	if not success or not loadedModel then
-		return false
-	end
-
-	task.wait(2)
-
-	for _, item in ipairs(loadedModel:GetChildren()) do
-		item.Parent = entry.dest
-	end
-
-	loadedModel:Destroy()
-	return true
+local function copyTable(t)
+    local out={}
+    for k,v in pairs(t) do out[k]=type(v)=="table" and copyTable(v) or v end
+    return out
+end
+local function bounded(n, bounds)
+    return type(n)=="number" and n==n and n>=bounds[1] and n<=bounds[2]
+end
+local function validateConfig(data)
+    if type(data)~="table" or data.Version~=6 or type(data.Config)~="table"
+        or type(data.Slots)~="table" or #data.Slots~=4 then return nil end
+    local c, ss = {}, {}
+    for k,v in pairs(CONFIG) do
+        local x=data.Config[k]
+        if x==nil and NewDefaults[k]~=nil then x=copyTable({value=NewDefaults[k]}).value end
+        if k=="Friendly" then
+            if type(x)~="table" then return nil end
+            local count=0
+            local friends={}
+            for id,b in pairs(x) do
+                count=count+1
+                if count>1000 or type(id)~="string" or #id>20
+                    or not id:match("^%d+$") or type(b)~="boolean" then return nil end
+                friends[id]=b
+            end
+            x=friends
+        elseif ConfigBounds[k] then
+            if not bounded(x, ConfigBounds[k]) then return nil end
+        elseif type(v)=="boolean" then
+            if type(x)~="boolean" then return nil end
+        elseif k=="Mode" and x~="PROTECT" and x~="ELIMINATE" then return nil end
+        c[k]=x
+    end
+    if c.PunchMax<c.PunchHold or c.RetreatMinWait>c.RetreatHold then return nil end
+    local assigned={}
+    for i=1,4 do
+        local s=data.Slots[i]
+        if type(s)~="table" or type(s.Name)~="string" or #s.Name>120 then return nil end
+        if s.Name~="" and assigned[s.Name] then return nil end
+        assigned[s.Name]=true
+        ss[i]={Name=s.Name}
+        for k,b in pairs(SkillBounds) do
+            if not bounded(s[k],b) then return nil end
+            ss[i][k]=s[k]
+        end
+    end
+    return c, ss
+end
+local function checksum(s)
+    local h=7
+    for i=1,#s do h=(h*31+string.byte(s,i))%2147483647 end
+    return tostring(h)
+end
+local function hexEncode(s)
+    return (s:gsub(".",function(x) return string.format("%02X",string.byte(x)) end))
+end
+local function hexDecode(s)
+    if #s%2~=0 or s:find("[^0-9A-Fa-f]") then return nil end
+    return (s:gsub("..",function(x) return string.char(tonumber(x,16)) end))
+end
+local function generateCode()
+    local json=Http:JSONEncode({Version=6, Config=copyTable(CONFIG), Slots=copyTable(Slots)})
+    local id=Http:GenerateGUID(false)
+    return "SF6|" .. id .. "|" .. checksum(id .. "|" .. json) .. "|" .. hexEncode(json), id
+end
+local function decodeCode(code)
+    if type(code)~="string" or #code>100000 then return nil end
+    code=code:gsub("%s", "")
+    local id,hash,hex=code:match("^SF6|([%x%-]+)|(%d+)|([%x]+)$")
+    if not id or #id~=36 then return nil end
+    local json=hexDecode(hex)
+    if not json or checksum(id .. "|" .. json)~=hash then return nil end
+    local ok,data=pcall(function() return Http:JSONDecode(json) end)
+    if not ok then return nil end
+    local c,ss=validateConfig(data)
+    if not c then return nil end
+    return c,ss,id
 end
 
-for _, entry in ipairs(criticalAssets) do
-	loadAsset(entry)
+-- GUI: two columns, left navigation + large right page.
+local previous=PlayerGui:FindFirstChild("SmoothFollowV6")
+if previous then previous:Destroy() end -- its Destroying handler cleans old controller
+local C={Bg=Color3.fromRGB(47,47,50), Panel=Color3.fromRGB(60,60,64),
+    Input=Color3.fromRGB(76,76,80), Blue=Color3.fromRGB(133,119,85),
+    Green=Color3.fromRGB(70,122,94), Red=Color3.fromRGB(139,73,76),
+    Text=Color3.fromRGB(250,248,242), Muted=Color3.fromRGB(208,205,197),
+    Black=Color3.fromRGB(9,9,11), Gold=Color3.fromRGB(205,182,122)}
+local ClickSound
+local function playUISound()
+    if not CONFIG.UISound or not ClickSound then return end
+    ClickSound.Volume=CONFIG.UISoundVolume
+    ClickSound:Stop(); ClickSound.TimePosition=0; ClickSound:Play()
 end
-
-for _, entry in ipairs(priorityAssets) do
-	loadAsset(entry)
+local function instance(class,parent,props)
+    local o=Instance.new(class)
+    for k,v in pairs(props or {}) do o[k]=v end
+    o.Parent=parent
+    return o
 end
-
-for _, entry in ipairs(secondaryAssets) do
-	task.spawn(function()
-		loadAsset(entry)
-	end)
+local function corner(o,r)
+    instance("UICorner",o,{CornerRadius=UDim.new(0,r or 7)})
+    if not o:FindFirstChildOfClass("UIStroke") then instance("UIStroke",o,{Color=C.Black,Thickness=1.5,ApplyStrokeMode=Enum.ApplyStrokeMode.Border}) end
 end
-
-local stable = 0
-local lastCount = 0
-
-while stable < 3 do
-	local currentCount = #game.ServerStorage:GetDescendants()
-
-	if currentCount == lastCount then
-		stable = stable + 1
-	else
-		stable = 0
-	end
-
-	lastCount = currentCount
-	task.wait(1)
+local function frame(parent,x,y,w,h,color)
+    local o=instance("Frame",parent,{Position=UDim2.fromOffset(x,y),Size=UDim2.fromOffset(w,h),
+        BackgroundColor3=color or C.Panel,BorderSizePixel=0})
+    corner(o); return o
 end
+local function label(parent,text,x,y,w,h,size,color)
+    return instance("TextLabel",parent,{Text=text,Position=UDim2.fromOffset(x,y),
+        Size=UDim2.fromOffset(w,h),BackgroundTransparency=1,TextColor3=color or C.Text,
+        Font=Enum.Font.GothamBold,TextStrokeTransparency=0.8,TextStrokeColor3=C.Black,TextSize=size or 15,TextXAlignment=Enum.TextXAlignment.Left,
+        TextTruncate=Enum.TextTruncate.AtEnd})
+end
+local function button(parent,text,x,y,w,h,fn,color)
+    local b=instance("TextButton",parent,{Text=text,Position=UDim2.fromOffset(x,y),
+        Size=UDim2.fromOffset(w,h),BackgroundColor3=color or C.Blue,BorderSizePixel=0,
+        TextColor3=C.Text,Font=Enum.Font.GothamBold,TextSize=16,TextWrapped=true})
+    corner(b)
+    if fn then connect(b.Activated,function(...)
+        local before=CONFIG.UISound
+        if before then playUISound() end
+        fn(...)
+        if not before and CONFIG.UISound then playUISound() end
+    end) end
+    return b
+end
+local function textbox(parent,x,y,w,h,text)
+    local b=instance("TextBox",parent,{Text=text or "",ClearTextOnFocus=false,
+        Position=UDim2.fromOffset(x,y),Size=UDim2.fromOffset(w,h),BackgroundColor3=C.Input,
+        TextColor3=C.Text,PlaceholderColor3=C.Muted,BorderSizePixel=0,
+        Font=Enum.Font.Gotham,TextSize=16})
+    corner(b,8); return b
+end
+local fieldRefresh={}
+local function numberField(parent,title,x,y,w,get,set,bounds)
+    label(parent,title,x,y,w,23,13,C.Muted)
+    local b=textbox(parent,x,y+27,w,39,tostring(get()))
+    connect(b.FocusLost,function()
+        local n=tonumber(b.Text)
+        if n and n==n and math.abs(n)~=math.huge then set(math.clamp(n,bounds[1],bounds[2])) end
+        b.Text=tostring(get())
+    end)
+    table.insert(fieldRefresh,function() b.Text=tostring(get()) end)
+    return b
+end
+Screen=instance("ScreenGui",PlayerGui,{Name="SmoothFollowV6",ResetOnSpawn=false,
+    IgnoreGuiInset=true,ZIndexBehavior=Enum.ZIndexBehavior.Sibling,DisplayOrder=50})
+Main=frame(Screen,0,0,860,500,C.Bg)
+Main.AnchorPoint=Vector2.new(0,0); Main.Position=UDim2.new(0.5,-430,0.5,-250)
+Main.ClipsDescendants=true
+Main:FindFirstChildOfClass("UIStroke").Thickness=2
+ClickSound=instance("Sound",Screen,{Name="RoyalToggleSound",SoundId="rbxasset://sounds/electronicpingshort.wav",Volume=0.35})
+local Scale=instance("UIScale",Main,{Scale=1})
+local Header=label(Main,"ROYAL FOLLOW  /  V6.2",20,5,600,27,21)
+Header.Active=true
+local Credit=label(Main,"Cre mamaScript / Funierx",20,33,600,18,12,C.Gold)
+local collapseButton, collapsed=false,false
+local Sidebar=frame(Main,12,60,170,390,C.Panel)
+label(Sidebar,"CONTROL CENTER",12,12,145,24,12,C.Muted)
+local pages,nav={},{}
+local function page(name,canvas)
+    local p=instance("ScrollingFrame",Main,{Name=name,Position=UDim2.fromOffset(196,60),
+        Size=UDim2.fromOffset(652,390),BackgroundTransparency=1,BorderSizePixel=0,
+        ScrollBarThickness=5,ScrollBarImageColor3=C.Blue,ScrollingDirection=Enum.ScrollingDirection.Y,
+        CanvasSize=UDim2.fromOffset(0,canvas),Visible=false})
+    pages[name]=p; return p
+end
+local currentPage="Main"
+local function showPage(name)
+    currentPage=name
+    for k,p in pairs(pages) do p.Visible=k==name end
+    for k,b in pairs(nav) do b.BackgroundColor3=k==name and C.Blue or C.Input end
+end
+local MainPage=page("Main",455)
+local ConfigPage=page("Config",1010)
+local CodePage=page("Codes",585)
+nav.Main=button(Sidebar,"MAIN",10,48,150,49,function() showPage("Main") end)
+nav.Config=button(Sidebar,"CONFIG",10,107,150,49,function() showPage("Config") end)
+nav.Codes=button(Sidebar,"MA CAU HINH",10,166,150,49,function() showPage("Codes") end)
+button(Sidebar,"BAT BAM",10,236,150,48,startFollowing,C.Green)
+button(Sidebar,"DUNG / THA",10,294,150,48,stopFollowing,C.Red)
+label(Sidebar,"PC + TOUCH",28,353,130,23,12,C.Muted)
+StatusLabel=label(Main,"SAN SANG",20,463,775,26,13,C.Muted)
+local Mini=frame(Main,0,0,1,1,C.Panel); Mini.Visible=false
+local slotButtons,miniButtons={},{}
+local equipSlot
+-- Hidden labels retain cooldown bookkeeping; compact mode has no buttons.
+for i=1,4 do miniButtons[i]=label(Mini,"",0,0,1,1,1) end
+local initiallyPlaced=false
+local function updateScale()
+    local camera=workspace.CurrentCamera
+    if camera then
+        local v=camera.ViewportSize
+        if not collapsed then Scale.Scale=math.max(0.1,math.min(1,(v.X-24)/860,(v.Y-56)/500)) end
+        if not initiallyPlaced then
+            initiallyPlaced=true
+            Main.Position=UDim2.new(0.5,-430*Scale.Scale,0.5,-250*Scale.Scale)
+        end
+    end
+end
+local closeButton
+local function toggleCollapse()
+    collapsed=not collapsed
+    -- Top-left anchor, fixed Position and fixed scale: no recenter/jump.
+    Main.Size=UDim2.fromOffset(collapsed and 250 or 860,collapsed and 50 or 500)
+    Sidebar.Visible=not collapsed; StatusLabel.Visible=not collapsed; Mini.Visible=false
+    Credit.Visible=not collapsed
+    Header.Text=collapsed and "ROYAL FOLLOW  +" or "ROYAL FOLLOW  /  V6.2"
+    Header.Size=UDim2.fromOffset(collapsed and 222 or 600,collapsed and 37 or 27)
+    Header.Position=UDim2.fromOffset(14,collapsed and 6 or 5)
+    Header.TextSize=collapsed and 16 or 21
+    for k,p in pairs(pages) do p.Visible=not collapsed and k==currentPage end
+    collapseButton.Visible=not collapsed
+    if closeButton then closeButton.Visible=not collapsed end
+end
+collapseButton=button(Main,"-",761,12,38,35,toggleCollapse,C.Input)
+closeButton=button(Main,"X",807,12,38,35,function() cleanup() end,C.Red)
+local drag
+local function beginGuiDrag(input,scrolling)
+    if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
+        drag={Input=input,Start=input.Position,Position=Main.Position,Moved=false,Expand=collapsed,
+            Scroller=scrolling,WasScrolling=scrolling and scrolling.ScrollingEnabled}
+    end
+end
+-- Bind backgrounds and labels, preserving buttons, text input and scrollers.
+local function bindDragSurface(o)
+    if o:IsA("Frame") or o:IsA("TextLabel") then
+        o.Active=true
+        connect(o.InputBegan,beginGuiDrag)
+    elseif o:IsA("ScrollingFrame") then
+        connect(o.InputBegan,function(input) beginGuiDrag(input,o) end)
+    end
+end
+bindDragSurface(Main)
+for _,o in ipairs(Main:GetDescendants()) do bindDragSurface(o) end
+connect(Main.DescendantAdded,bindDragSurface)
+connect(UIS.InputChanged,function(input)
+    if not drag then return end
+    if input~=drag.Input and not (drag.Input.UserInputType==Enum.UserInputType.MouseButton1
+        and input.UserInputType==Enum.UserInputType.MouseMovement) then return end
+    local delta=input.Position-drag.Start
+    -- Vertical touch movement keeps scrolling; horizontal movement drags GUI.
+    if drag.Scroller and input.UserInputType==Enum.UserInputType.Touch and not drag.Moved
+        and math.abs(delta.X)<=math.abs(delta.Y)*1.5 then return end
+    if drag.Scroller and delta.Magnitude>5 then drag.Scroller.ScrollingEnabled=false end
+    if delta.Magnitude>5 then drag.Moved=true end
+    Main.Position=UDim2.new(drag.Position.X.Scale,drag.Position.X.Offset+delta.X,
+        drag.Position.Y.Scale,drag.Position.Y.Offset+delta.Y)
+end)
+connect(UIS.InputEnded,function(input)
+    if drag and (input==drag.Input or (drag.Input.UserInputType==Enum.UserInputType.MouseButton1
+        and input.UserInputType==Enum.UserInputType.MouseButton1)) then
+        local expand=drag.Expand and not drag.Moved
+        if drag.Scroller and drag.Scroller.Parent then drag.Scroller.ScrollingEnabled=drag.WasScrolling end
+        drag=nil
+        if expand then playUISound(); toggleCollapse() end
+    end
+end)
 
-local expectedFolders = {
-	"Workspace",
-	"Lighting",
-	"MaterialService",
-	"ReplicatedFirst",
-	"ReplicatedStorage",
-	"ServerScriptService",
-	"StarterGui",
-	"StarterPack",
-	"StarterPlayer",
-	"Teams",
-	"SoundService",
-	"Chat"
+label(MainPage,"PLAYER",8,0,305,30,21)
+label(MainPage,"XANH: FRIEND  /  DO: ENEMY",8,313,305,13,10,C.Muted)
+TargetLabel=label(MainPage,"Chua chon player",8,35,305,25,16,C.Muted)
+local Search=textbox(MainPage,8,69,305,42,""); Search.PlaceholderText="Tim player..."
+local PlayerList=instance("ScrollingFrame",MainPage,{Position=UDim2.fromOffset(8,121),
+    Size=UDim2.fromOffset(305,191),BackgroundColor3=C.Panel,BorderSizePixel=0,
+    ScrollBarThickness=4,CanvasSize=UDim2.fromOffset(0,0)})
+corner(PlayerList)
+instance("UIListLayout",PlayerList,{Padding=UDim.new(0,5),SortOrder=Enum.SortOrder.LayoutOrder})
+refreshPlayers=function()
+    for _,o in ipairs(PlayerList:GetChildren()) do if o:IsA("Frame") or o:IsA("TextButton") then o:Destroy() end end
+    local list,q={},Search.Text:lower()
+    for _,p in ipairs(Players:GetPlayers()) do
+        if p~=Me and (q=="" or p.Name:lower():find(q,1,true) or p.DisplayName:lower():find(q,1,true)) then
+            table.insert(list,p)
+        end
+    end
+    table.sort(list,function(a,b) return a.Name<b.Name end)
+    for i,p in ipairs(list) do
+        local player=p
+        local row=frame(PlayerList,0,0,293,50,C.Panel)
+        row.LayoutOrder=i
+        local b=button(row,"@"..p.Name.."\n"..p.DisplayName,0,0,219,50,function()
+            Rush=nil; SelectedPlayer=player
+            resetFollowPose()
+            TargetLabel.Text="Dang chon: @"..player.Name
+            if Following then startFollowing() end
+            refreshPlayers()
+        end,p==SelectedPlayer and C.Blue or C.Input)
+        b.TextSize=14
+        local friendly=CONFIG.Friendly[tostring(p.UserId)]==true
+        local friendBtn=button(row,friendly and "FRIEND" or "ENEMY",225,0,68,50,function()
+            local id=tostring(player.UserId)
+            CONFIG.Friendly[id]=not CONFIG.Friendly[id]
+            if CONFIG.Friendly[id] and Rush and Rush.EnemyPlayer==player then
+                forceReturn("FRIENDLY - KHONG TARGET",true)
+            end
+            refreshPlayers()
+            status(CONFIG.Friendly[id] and "FRIENDLY: @"..player.Name or "UNFRIENDLY: @"..player.Name)
+        end,friendly and C.Green or C.Red)
+        friendBtn.TextSize=11
+    end
+    PlayerList.CanvasSize=UDim2.fromOffset(0,#list*55)
+end
+local function changeMode()
+    CONFIG.Mode=CONFIG.Mode=="PROTECT" and "ELIMINATE" or "PROTECT"
+    Rush=nil
+    RefreshControls()
+    status(CONFIG.Mode=="PROTECT" and "BAO VE - LOAI PLAYER DANG BAM" or "TIEU DIET - CHI PLAYER DANG BAM")
+end
+ModeButton=button(MainPage,"",8,328,625,50,changeMode,C.Green)
+label(MainPage,"4 SKILL / TOOL",328,0,305,30,21)
+label(MainPage,"Cham tool -> slot de gan",328,35,305,25,13,C.Muted)
+local ToolList=instance("ScrollingFrame",MainPage,{Position=UDim2.fromOffset(328,69),
+    Size=UDim2.fromOffset(305,53),BackgroundColor3=C.Panel,BorderSizePixel=0,
+    ScrollBarThickness=4,ScrollingDirection=Enum.ScrollingDirection.X,CanvasSize=UDim2.fromOffset(0,0)})
+instance("UIListLayout",ToolList,{FillDirection=Enum.FillDirection.Horizontal,Padding=UDim.new(0,7)})
+local assignTool
+for i=1,4 do
+    local id=i
+    local x=328+((i-1)%2)*158
+    local y=137+math.floor((i-1)/2)*99
+    slotButtons[i]=button(MainPage,"",x,y,147,53,function()
+        if PickedToolName then assignTool(PickedToolName,id) else equipSlot(id) end
+    end)
+    button(MainPage,"CHINH "..i,x,y+59,147,32,function()
+        SelectedSlot=id; PickedToolName=nil; RefreshEditor(); RefreshSlots(); showPage("Config")
+        ConfigPage.CanvasPosition=Vector2.new(0,630)
+    end,C.Input)
+end
+TouchLabel=label(MainPage,"PunchButton / DashButton: dang tim...",8,386,625,25,13,C.Muted)
+local help=label(MainPage,"Friendly xanh khong target o ca 2 che do. Mau doc truc tiep tu Humanoid.",8,419,620,34,13,C.Muted)
+help.TextWrapped=true; help.TextTruncate=Enum.TextTruncate.None
+
+-- Grouped sections: FOLLOW, INPUT/SKILLS, HEALTH/TARGET, RETREAT.
+local function section(title,y)
+    local bar=frame(ConfigPage,8,y,625,36,C.Panel)
+    label(bar,title,12,3,600,30,19)
+end
+local toggles={}
+local function toggle(parent,key,title,x,y,w)
+    local b=button(parent,"",x,y,w,45,function()
+        CONFIG[key]=not CONFIG[key]
+        if key=="DisableOwnMovement" and not CONFIG[key] and ManagedHum and SavedMotion then
+            ManagedHum.WalkSpeed=SavedMotion.WalkSpeed
+            ManagedHum.JumpPower=SavedMotion.JumpPower
+            ManagedHum.JumpHeight=SavedMotion.JumpHeight
+        end
+        if key=="RetreatEnabled" and not CONFIG[key] and Rush
+            and (Rush.Phase=="RETREAT_WAIT" or Rush.Phase=="RETREAT_OUT") then forceReturn("TAT LUI - QUAY VE",false) end
+        updateStandPad(); RefreshControls()
+    end)
+    table.insert(toggles,{Button=b,Key=key,Title=title})
+end
+local function configField(key,title,x,y,w)
+    numberField(ConfigPage,title,x,y,w,function() return CONFIG[key] end,function(n)
+        CONFIG[key]=n
+        if key=="PunchHold" then CONFIG.PunchMax=math.max(CONFIG.PunchMax,n) end
+        if key=="PunchMax" then CONFIG.PunchHold=math.min(CONFIG.PunchHold,n) end
+        if key=="RetreatHold" then CONFIG.RetreatMinWait=math.min(CONFIG.RetreatMinWait,n) end
+        if key=="RetreatMinWait" then CONFIG.RetreatHold=math.max(CONFIG.RetreatHold,n) end
+        for _,f in ipairs(fieldRefresh) do f() end
+    end,ConfigBounds[key])
+end
+section("01 / BAM MUOT & TU THE",0)
+for i,e in ipairs({{"Side","X / trai - phai"},{"Height","Y / do cao"},{"Behind","Z / sau - truoc"}}) do
+    configField(e[1],e[2],8+(i-1)*211,48,202)
+end
+configField("FollowResponse","Do muot / response",8,126,307)
+configField("FollowLookAhead","Du doan chuyen dong / s",326,126,307)
+toggle(ConfigPage,"FaceFollowTarget","Nhin player bam",8,207,307)
+toggle(ConfigPage,"AimY","Nhin theo Y",326,207,307)
+toggle(ConfigPage,"DisableOwnMovement","Khoa nut di chuyen",8,262,307)
+toggle(ConfigPage,"AirStand","Tu the dung tren khong",326,262,307)
+toggle(ConfigPage,"FootPad","Pad duoi chan",8,317,625)
+section("02 / PUNCH - DASH - TOOL",378)
+toggle(ConfigPage,"AutoRushOnEquip","Cam tool -> lao",8,425,202)
+toggle(ConfigPage,"TouchPunch","PunchButton",219,425,202)
+toggle(ConfigPage,"TouchDash","DashButton",430,425,202)
+for i,e in ipairs({{"PunchDelay","Punch delay / s"},{"PunchHold","Moi punch cong / s"},
+    {"PunchMax","Punch toi da / s"},{"DashDelay","Dash delay / s"},{"DashHold","Dash dung sau / s"}}) do
+    configField(e[1],e[2],8+((i-1)%3)*211,484+math.floor((i-1)/3)*78,202)
+end
+local EditorTitle=label(ConfigPage,"",8,645,625,29,20)
+for i=1,4 do
+    local id=i
+    button(ConfigPage,"SLOT "..i,8+(i-1)*158,687,151,40,function()
+        SelectedSlot=id; RefreshEditor(); RefreshSlots()
+    end,C.Input)
+end
+local EditFields={}
+local editorKeys={
+    {"Delay","Delay / s"},{"TravelTime","Tele den / s"},{"ReturnTime","Tele ve / s"},
+    {"BehindHold","Dung sau target / s"},{"ReturnDelay","Cho truoc khi ve / s"},
+    {"Cooldown","Cooldown / s"},{"Radius","Ban kinh tim / studs"},{"Approach","Sau target / studs"},
 }
-
-for _, folderName in ipairs(expectedFolders) do
-	local folder = game.ServerStorage:FindFirstChild(folderName)
+for i,e in ipairs(editorKeys) do
+    local key,title=e[1],e[2]
+    EditFields[key]=numberField(ConfigPage,title,8+((i-1)%3)*211,741+math.floor((i-1)/3)*78,202,
+        function() return Slots[SelectedSlot][key] end,
+        function(n) Slots[SelectedSlot][key]=n end,SkillBounds[key])
+end
+section("03 / LOC TARGET & THEO DOI MAU",980)
+configField("MaxTargetY","Chenh lech Y toi da / studs",8,1028,307)
+configField("DamagePercent","Ve khi mat > % MaxHealth",326,1028,307)
+toggle(ConfigPage,"DamageReturn","Mat mau -> ve",8,1110,307)
+HealthLabel=label(ConfigPage,"HP --",338,1118,290,32,18,C.Green)
+label(ConfigPage,"Friendly: chinh nut xanh/do ben canh tung player o Main.",8,1170,625,25,14,C.Muted)
+section("04 / RUT LUI KHI TARGET CAM TOOL",1211)
+toggle(ConfigPage,"RetreatEnabled","Bat rut lui",8,1258,625)
+for i,e in ipairs({{"RetreatDistance","Lui / studs"},{"RetreatTime","Thoi gian lui / s"},
+    {"RetreatHold","Dung o vi tri lui / s"},{"RetreatMinWait","Punch cho toi thieu / s"}}) do
+    configField(e[1],e[2],8+((i-1)%3)*211,1321+math.floor((i-1)/3)*78,202)
+end
+section("05 / DU DOAN HITBOX & AM THANH",1485)
+toggle(ConfigPage,"AntiDelayHitbox","Anti Delay Hitbox",8,1532,307)
+toggle(ConfigPage,"UISound","Am thanh nut",326,1532,307)
+configField("HitboxLeadTime","Du doan van toc / s",8,1591,202)
+configField("HitboxMaxLead","Khoang du doan toi da",219,1591,202)
+configField("FlightMaxSpeed","Toc do bay toi da",430,1591,202)
+configField("UISoundVolume","Am luong / 0-1",8,1670,307)
+ConfigPage.CanvasSize=UDim2.fromOffset(0,1750)
+RefreshEditor=function()
+    EditorTitle.Text="CHINH SLOT "..SelectedSlot.." / "..Slots[SelectedSlot].Name
+    for key,b in pairs(EditFields) do b.Text=tostring(Slots[SelectedSlot][key]) end
+end
+RefreshControls=function()
+    ModeButton.Text=CONFIG.Mode=="PROTECT" and "BAO VE PLAYER DANG BAM" or "TIEU DIET PLAYER DANG BAM"
+    ModeButton.BackgroundColor3=CONFIG.Mode=="PROTECT" and C.Green or C.Red
+    for _,t in ipairs(toggles) do
+        t.Button.Text=t.Title..": "..(CONFIG[t.Key] and "ON" or "OFF")
+        t.Button.BackgroundColor3=CONFIG[t.Key] and C.Green or C.Input
+    end
+end
+RefreshSlots=function()
+    for i,s in ipairs(Slots) do
+        slotButtons[i].Text=i.."  |  "..(s.Name~="" and s.Name or "EMPTY")
+        slotButtons[i].TextSize=14
+        slotButtons[i].BackgroundColor3=SelectedSlot==i and C.Green or C.Blue
+        miniButtons[i].Text="S"..i.." | "..string.sub(s.Name,1,11)
+        miniButtons[i].TextSize=13
+    end
+end
+assignTool=function(name,slot)
+    local old=getSlotByToolName(name)
+    local replaced=Slots[slot].Name
+    Slots[slot].Name=name
+    if old and old~=slot then Slots[old].Name=replaced end
+    -- A changed Tool gets a fresh 2s default; original named skills keep 1/4s.
+    if replaced~=name then
+        Slots[slot].BehindHold=name=="Normal Punch" and 1 or name=="Consecutive Punches" and 4 or 2
+        if old and old~=slot then
+            Slots[old].BehindHold=replaced=="Normal Punch" and 1 or replaced=="Consecutive Punches" and 4 or 2
+        end
+    end
+    SelectedSlot=slot; PickedToolName=nil
+    RefreshEditor(); RefreshSlots(); status("DA GAN "..name.." VAO SLOT "..slot)
 end
 
-local MainModule = require(
-	game:GetService("ServerScriptService"):WaitForChild("MainModule")
-)
+label(CodePage,"LUU & LOAD CAU HINH",8,0,625,32,21)
+local CodeID=label(CodePage,"Chua tao ma",8,42,625,27,13,C.Muted)
+local explanation=label(CodePage,"Moi lan Generate tao ID rieng. Ma chua toan bo config + 4 slot; giu ma de load lai sau khi vao game moi.",8,81,625,54,15,C.Muted)
+explanation.TextWrapped=true; explanation.TextTruncate=Enum.TextTruncate.None
+local Output=textbox(CodePage,8,151,625,113,"")
+Output.MultiLine=true; Output.TextWrapped=true; Output.TextSize=12
+Output.TextXAlignment=Enum.TextXAlignment.Left; Output.TextYAlignment=Enum.TextYAlignment.Top
+Output.PlaceholderText="Ma cau hinh se xuat hien o day"; Output.Font=Enum.Font.Code
+local function generate()
+    if UIS:GetFocusedTextBox() then UIS:GetFocusedTextBox():ReleaseFocus() end
+    local code,id=generateCode()
+    Output.Text=code; CodeID.Text="ID: "..id
+    status("DA TAO MA - GIU TOAN BO CHUOI SF6")
+end
+button(CodePage,"GENERATE MA",8,278,307,47,generate,C.Green)
+button(CodePage,"COPY / CHON MA",326,278,307,47,function()
+    if Output.Text=="" then generate() end
+    Output:CaptureFocus()
+    task.defer(function()
+        if destroyed then return end
+        Output.SelectionStart=1; Output.CursorPosition=#Output.Text+1
+    end)
+    status("DA CHON MA - CTRL+C HOAC COPY TREN DIEN THOAI")
+end)
+label(CodePage,"DAN MA CAN LOAD",8,344,625,25,16)
+local LoadBox=textbox(CodePage,8,381,625,104,"")
+LoadBox.MultiLine=true; LoadBox.TextWrapped=true; LoadBox.TextSize=12
+LoadBox.Font=Enum.Font.Code; LoadBox.PlaceholderText="Dan day du ma SF6|..."
+LoadBox.TextXAlignment=Enum.TextXAlignment.Left; LoadBox.TextYAlignment=Enum.TextYAlignment.Top
+button(CodePage,"LOAD CAU HINH",8,499,625,50,function()
+    if UIS:GetFocusedTextBox() then UIS:GetFocusedTextBox():ReleaseFocus() end
+    local c,ss,id=decodeCode(LoadBox.Text)
+    if not c then status("MA LOI / THIEU / KHONG DUNG PHIEN BAN V6"); return end
+    -- Validate everything first; only then stop and replace all values.
+    local wasFollowing=Following
+    stopFollowing(); CONFIG=c; Slots=ss
+    TargetY=setmetatable({}, {__mode="k"}); BlockedY=setmetatable({}, {__mode="k"})
+    PickedToolName=nil; Cooldowns=setmetatable({}, {__mode="k"})
+    for _,f in ipairs(fieldRefresh) do f() end
+    RefreshControls(); RefreshSlots(); RefreshEditor(); RefreshCatalog()
+    refreshPlayers()
+    CodeID.Text="DA LOAD ID: "..id
+    if wasFollowing then startFollowing() end
+    status("DA LOAD CAU HINH ID "..id)
+end,C.Green)
 
-MainModule:Unpack()
+-- Drag/drop cards with touch-safe matching and click suppression on release.
+local ToolDrag, Ghost
+local clickSuppression=0
+local function pointerEnds(input,original)
+    return input==original or (input.UserInputType==Enum.UserInputType.MouseButton1
+        and original.UserInputType==Enum.UserInputType.MouseButton1)
+end
+local function inside(point,o)
+    if collapsed or not MainPage.Visible then return false end
+    local p,s=o.AbsolutePosition,o.AbsoluteSize
+    local vp,vs=MainPage.AbsolutePosition,MainPage.AbsoluteSize
+    return point.X>=p.X and point.X<=p.X+s.X and point.Y>=p.Y and point.Y<=p.Y+s.Y
+        and point.Y>=vp.Y and point.Y<=vp.Y+vs.Y
+end
+connect(UIS.InputChanged,function(input)
+    local d=ToolDrag
+    if not d then return end
+    if input~=d.Input and not (d.Input.UserInputType==Enum.UserInputType.MouseButton1
+        and input.UserInputType==Enum.UserInputType.MouseMovement) then return end
+    if not d.Dragged and (input.Position-d.Start).Magnitude>10 then
+        d.Dragged=true; ToolList.ScrollingEnabled=false; MainPage.ScrollingEnabled=false
+        Ghost=label(Screen,d.Name,0,0,180,42,16)
+        Ghost.BackgroundTransparency=0; Ghost.BackgroundColor3=C.Green; Ghost.ZIndex=100
+        corner(Ghost)
+    end
+    if Ghost then Ghost.Position=UDim2.fromOffset(input.Position.X-90,input.Position.Y-21) end
+end)
+connect(UIS.InputEnded,function(input)
+    local d=ToolDrag
+    if not d or not pointerEnds(input,d.Input) then return end
+    ToolDrag=nil
+    if d.Dragged then
+        clickSuppression=os.clock()+0.3
+        for i,b in ipairs(slotButtons) do if inside(input.Position,b) then assignTool(d.Name,i); break end end
+    end
+    ToolList.ScrollingEnabled=true; MainPage.ScrollingEnabled=true
+    if Ghost then Ghost:Destroy(); Ghost=nil end
+end)
+local catalogSignature=""
+RefreshCatalog=function()
+    if ToolDrag then return end
+    local names={}
+    local function gather(parent)
+        if not parent then return end
+        for _,o in ipairs(parent:GetDescendants()) do if o:IsA("Tool") then names[o.Name]=true end end
+    end
+    gather(Backpack); gather(Me.Character)
+    gather(ReplicatedStorage:FindFirstChild("Tools")); gather(workspace:FindFirstChild("ToolsDrops"))
+    for _,s in ipairs(Slots) do if s.Name~="" then names[s.Name]=true end end
+    local sorted={}
+    for name in pairs(names) do table.insert(sorted,name) end
+    table.sort(sorted)
+    local sign={}
+    for _,name in ipairs(sorted) do table.insert(sign,name..":"..tostring(getOwnedTool(name)~=nil)) end
+    local signature=table.concat(sign,"\n")
+    if signature==catalogSignature then return end
+    catalogSignature=signature
+    for _,o in ipairs(ToolList:GetChildren()) do if o:IsA("TextButton") then o:Destroy() end end
+    for _,name in ipairs(sorted) do
+        local toolName=name
+        local b=button(ToolList,(getOwnedTool(name) and "* " or "? ")..name,0,0,188,44,function()
+            if os.clock()<clickSuppression then return end
+            PickedToolName=toolName; status("CHON "..toolName.." - CHAM SLOT DE GAN")
+        end,getOwnedTool(name) and C.Green or C.Input)
+        b.TextSize=13
+        connect(b.InputBegan,function(input)
+            if input.UserInputType==Enum.UserInputType.Touch or input.UserInputType==Enum.UserInputType.MouseButton1 then
+                ToolDrag={Name=toolName,Input=input,Start=input.Position,Dragged=false}
+            end
+        end)
+    end
+    ToolList.CanvasSize=UDim2.fromOffset(#sorted*195,0)
+end
+
+-- Tool observers: they never invoke remotes or damage. GUI casting is gated
+-- by the same mode/target selection before EquipTool / Activate is called.
+local function bindTool(tool)
+    if not tool:IsA("Tool") or ToolLinks[tool] then return end
+    local links={}; ToolLinks[tool]=links
+    links[1]=tool.Equipped:Connect(function()
+        if CONFIG.AutoRushOnEquip and os.clock()>=(SuppressEquip[tool] or 0)
+            and os.clock()-(EquippedAt[tool] or -10)>0.05 then
+            EquippedAt[tool]=os.clock(); beginAction("TOOL",tool,true)
+        end
+    end)
+    links[2]=tool.Activated:Connect(function()
+        if os.clock()<(SuppressActivation[tool] or 0) then return end
+        -- A real new activation replaces the previous action.
+        beginAction("TOOL",tool,false)
+    end)
+    links[3]=tool.Destroying:Connect(function()
+        for _,c in ipairs(links) do c:Disconnect() end
+        ToolLinks[tool]=nil
+    end)
+end
+local function scanTools()
+    for _,parent in ipairs({Backpack,Me.Character}) do
+        for _,o in ipairs(parent:GetChildren()) do bindTool(o) end
+    end
+end
+equipSlot=function(slot)
+    local tool=getOwnedTool(Slots[slot].Name)
+    local c,_,hum=alive(Me)
+    if not c or not tool then status("TOOL KHONG NAM TRONG BACKPACK"); return end
+    if not Following or not tool.Enabled then status("BAT BAM / CHO TOOL SAN SANG"); return end
+    if not selectSkillTarget(Slots[slot].Radius) then status("KHONG CO MUC TIEU HOP LE"); return end
+    if os.clock()<(Cooldowns[tool] or 0) then status("TOOL COOLDOWN"); return end
+    bindTool(tool)
+    SuppressEquip[tool]=os.clock()+0.5
+    if tool.Parent~=c then hum:EquipTool(tool) end
+    if not beginAction("TOOL",tool,true) then return end
+    SuppressActivation[tool]=os.clock()+0.05
+    tool:Activate() -- actual ability remains governed by the game's combat system
+end
+
+-- Bind the actual buttons, even nested in Player/JumpButton folders.
+-- Restricted to TouchGui > TouchControlFrame: avoids matching our own UI.
+local function scanTouch()
+    local punch,dash=false,false
+    local valid={}
+    for _,touch in ipairs(PlayerGui:GetDescendants()) do
+        if touch.Name=="TouchGui" then
+            local control=touch:FindFirstChild("TouchControlFrame",true)
+            if control then
+                for _,b in ipairs(control:GetDescendants()) do
+                    if b:IsA("GuiButton") and (b.Name=="PunchButton" or b.Name=="DashButton") then
+                        valid[b]=true
+                        if b.Name=="PunchButton" then punch=true else dash=true end
+                        if not TouchLinks[b] then
+                            local kind=b.Name=="PunchButton" and "PUNCH" or "DASH"
+                            TouchLinks[b]=b.Activated:Connect(function()
+                                if kind=="PUNCH" and CONFIG.TouchPunch then beginAction("PUNCH",nil,false)
+                                elseif kind=="DASH" and CONFIG.TouchDash then beginAction("DASH",nil,false) end
+                            end)
+                        end
+                    end
+                end
+            end
+        end
+    end
+    for b,c in pairs(TouchLinks) do if not valid[b] then c:Disconnect(); TouchLinks[b]=nil end end
+    TouchLabel.Text="PunchButton: "..(punch and "OK" or "CHUA CO").."   |   DashButton: "..(dash and "OK" or "CHUA CO")
+end
+local backpackLink,characterLink,cameraLink
+local function bindBackpack(b)
+    if backpackLink then backpackLink:Disconnect() end
+    Backpack=b; backpackLink=b.ChildAdded:Connect(bindTool); scanTools()
+end
+local function bindCharacter(c)
+    Rush=nil; releaseOwnCharacter()
+    if characterLink then characterLink:Disconnect() end
+    characterLink=c.ChildAdded:Connect(function(o)
+        bindTool(o)
+        if o:IsA("Tool") then task.defer(function()
+            if destroyed or o.Parent~=Me.Character or not CONFIG.AutoRushOnEquip then return end
+            if os.clock()<(SuppressEquip[o] or 0) or os.clock()-(EquippedAt[o] or -10)<0.05 then return end
+            EquippedAt[o]=os.clock(); beginAction("TOOL",o,true)
+        end) end
+    end)
+    scanTools()
+end
+local function bindCamera()
+    if cameraLink then cameraLink:Disconnect() end
+    if workspace.CurrentCamera then
+        cameraLink=workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(updateScale)
+    end
+    updateScale()
+end
+cleanup=function()
+    if destroyed then return end
+    destroyed=true; stopFollowing()
+    RunService:UnbindFromRenderStep(renderBinding)
+    for _,c in ipairs(Connections) do c:Disconnect() end
+    for _,links in pairs(ToolLinks) do for _,c in ipairs(links) do c:Disconnect() end end
+    for _,c in pairs(TouchLinks) do c:Disconnect() end
+    for _,c in pairs({backpackLink,characterLink,cameraLink}) do c:Disconnect() end
+    if Ghost then Ghost:Destroy() end
+    if Screen then Screen:Destroy() end
+end
+connect(Screen.Destroying,function() Screen=nil; cleanup() end)
+connect(script.Destroying,cleanup)
+connect(Me.CharacterAdded,bindCharacter)
+connect(Me.CharacterRemoving,function() Rush=nil; releaseOwnCharacter() end)
+connect(Me.ChildAdded,function(c) if c:IsA("Backpack") then bindBackpack(c) end end)
+connect(Players.PlayerAdded,refreshPlayers)
+connect(Players.PlayerRemoving,function(p)
+    if p==SelectedPlayer then
+        stopFollowing(); SelectedPlayer=nil; TargetLabel.Text="Player da roi server"
+    end
+    task.defer(function() if not destroyed then refreshPlayers() end end)
+end)
+connect(Search:GetPropertyChangedSignal("Text"),refreshPlayers)
+connect(workspace:GetPropertyChangedSignal("CurrentCamera"),bindCamera)
+bindBackpack(Backpack)
+if Me.Character then bindCharacter(Me.Character) end
+bindCamera(); RefreshControls(); RefreshEditor(); RefreshSlots(); RefreshCatalog(); refreshPlayers(); scanTouch()
+showPage("Main")
+
+-- State transitions run ONCE per simulation step. Render pass only pins the
+-- current pose; it cannot advance timers twice in a single frame.
+connect(RunService.PreSimulation,updateMovement)
+RunService:UnbindFromRenderStep(renderBinding)
+RunService:BindToRenderStep(renderBinding,Enum.RenderPriority.Camera.Value-1,function(dt)
+    if destroyed or not Following or Suspended then return end
+    local _,target=alive(SelectedPlayer)
+    if not target or not alive(Me) then return end
+    if Rush and Rush.Phase~="RETURN" and not eligible(Rush.EnemyPlayer) then
+        forceReturn("BO QUA TARGET FRIENDLY / Y QUA XA",true)
+    end
+    if not Rush or Rush.Phase=="DELAY" then updateStandPad()
+    elseif Rush.Phase=="HOLD" or Rush.Phase=="RETURN_DELAY" then
+        local _,enemy=alive(Rush.EnemyPlayer)
+        if enemy and eligible(Rush.EnemyPlayer) then placeOwnCharacter(skillCFrame(enemy,Rush.Settings.Approach)) end
+    elseif Rush.Phase=="RETREAT_WAIT" then placeOwnCharacter(Rush.RetreatCF) end
+end)
+local nextScan,nextCooldown=0,0
+connect(RunService.Heartbeat,function()
+    if destroyed then return end
+    local now=os.clock()
+    if HealthLabel then
+        local char=Me.Character
+        local hum=char and char:FindFirstChildOfClass("Humanoid")
+        HealthLabel.Text=hum and string.format("HP  %.1f / %.1f",hum.Health,hum.MaxHealth) or "HP  --"
+    end
+    if now>=nextScan then
+        nextScan=now+0.75; scanTools(); scanTouch(); RefreshCatalog()
+        -- Disconnect tools removed from our inventory, not just destroyed.
+        for tool,links in pairs(ToolLinks) do
+            if tool.Parent~=Backpack and tool.Parent~=Me.Character then
+                for _,c in ipairs(links) do c:Disconnect() end
+                ToolLinks[tool]=nil
+            end
+        end
+    end
+    if now>=nextCooldown then
+        nextCooldown=now+0.15
+        for i,s in ipairs(Slots) do
+            local tool=getOwnedTool(s.Name)
+            local left=tool and math.max(0,(Cooldowns[tool] or 0)-now) or 0
+            miniButtons[i].Text=left>0 and string.format("S%d | %.1fs",i,left)
+                or "S"..i.." | "..string.sub(s.Name,1,11)
+        end
+    end
+end)
+status("SAN SANG - CHON PLAYER, SAU DO BAT BAM")
+print("[Royal Follow V6.2] Cre mamaScript / Funierx | Physical Flight + Velocity Prediction")
