@@ -1,1129 +1,998 @@
-local pqhBuUzOX1zYxouIu1OO=(bit32.bxor(bit32.bxor(49054,24199),53550))
-local nqzwZ8081IRhIsWlGCW=((4269>8897) and false or true)
-local xzXxIDuO9bWb0IHIb1nl=(bit32.bxor(484498,7711672))
-local dacIiIvjDhCPOj=(math.max(272,508,785,965))
-local ubKunOnJ5naKRBI1Znn=(string.rep("\x43",1))
-local pKcsTfNrhsz8aBlinL8Z=(string.rep("\x46",4))
-local uew0sulbqj8IcW=(string.rep("\x4c",2))
-local f58dTpsbGE2otAWKAd=((5478>5951) and false or true)
-local rw0IhRBAOguiwo=(bit32.bxor(bit32.bxor(58633,1565),36921))
-local I28DSXPwkGngb2E0TSm9zt=(bit32.bxor(4576167,2270627))
-local nnDZI_WNoobiSuzZIFTUi8=("\x34".."\64".."\x48")
-local phYqnstIbekS8DO=(bit32.bxor(15035410,12124666))
-local qW2SAtZLECgCDxxj85Iv=("\61".."\54".."\x4a".."\x26".."\92")
-local nhCzJoNbbBYpib8YG0oiX=((1309>2824) and false or true)
-local B1SqsRqFtzi2c2=((6993*1344+85)%256)
-local olZUzFCstnx1sBugxf=(bit32.bxor(10825513,6308064))
-local urnMqS9GAtTqza8H5yifi=(bit32.bxor(bit32.bxor(bit32.bxor(bit32.bxor(11205,52900),20778),38715),20591))
-local en8cenIDvb8q1KeH1Wqn=(bit32.bxor(3155245,13466436))
-local jXs9IgTIkCkvfBn=("\x75".."\x3e".."\x3a".."\x22".."\70".."\37".."\x52")
-local iwBBMcUrxhkUiJ5=((1389-696-84)%256)
+--[[
+CatLazy Auto Candy
+v7.5: webhook CHI bao sau hop (bo door-knock notify)
+]]
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
+local player = Players.LocalPlayer
+local folder = workspace:WaitForChild("HalloweenCandy")
+local trees = workspace:WaitForChild("HalloweenDoorTrees")
+local camera = workspace.CurrentCamera
 
-local Players = game:GetService("\80\108\97\121\101\x72\x73")
-local TweenService = game:GetService("\x54\x77\101\x65\x6e\83\x65\x72\118\105\99\101")
-local UserInputService = game:GetService("\x55\115\x65\x72\73\x6e\112\117\x74\83\x65\x72\118\105\99\x65")
-local BwRvusSCY1gMbdPXTD5cB = game:GetService("\x54\x65\x6c\101\x70\x6f\x72\116\83\x65\x72\118\105\x63\101")
-local HttpService = game:GetService("\x48\x74\116\112\x53\x65\114\118\x69\x63\101")
-local fgVXlOSo2nuknDCiu8I = Players.LocalPlayer
-local hlvskfZzYrItxz = workspace:WaitForChild("\x48\97\108\108\x6f\x77\101\x65\x6e\x43\x61\110\100\x79")
-local yeG29eqODOeibjulsiHw = workspace:WaitForChild("\x48\97\108\x6c\111\119\x65\101\110\x44\111\x6f\x72\84\114\x65\x65\115")
-local uZB9R1nRnToiCh9Vv_ = workspace.CurrentCamera
+local HOP_INTERVAL = 10 * 60
+local SCRIPT_URL = "https://raw.githubusercontent.com/Catgame-VN/game-sf/refs/heads/main/tsb%20autofarm"
+local MAX_LOG_LINES = 4
+local WEBHOOK_FILE = "CatLazy_webhook.txt"
 
-local czhtJ1ZtwBocio=(math.max(832,512))
-local xbOwbik1w5qbmMF9z=(#"\94\x27\x3b\99\x6e\44\59\124\101")
-local hIOBW9bZbqO1BJUqnhbx_c = (bit32.bxor(920736566,920736572)) * (bit32.bxor(448561073,448561037))
-local ZWkZ8SE8bItH1R = "\104\x74\116\x70\x73\58\47\47\114\x61\119\x2e\x67\105\x74\x68\117\x62\x75\x73\101\x72\x63\x6f\110\116\x65\110\x74\x2e\99\x6f\109\47\x43\97\116\x67\97\109\101\x2d\86\x4e\47\x67\x61\x6d\101\x2d\115\102\x2f\114\101\x66\x73\x2f\x68\101\x61\100\x73\47\109\97\105\x6e\x2f\x74\x73\x62\x25\50\48\x61\x75\116\111\102\x61\x72\x6d"
-local a5veEGCnjuqBAR5 = (bit32.bxor(1934893537,1934893541))
-local vgrBDii9nSAzSNlb8Ib2 = "\67\97\116\76\x61\x7a\121\95\119\101\98\x68\x6f\x6f\107\x2e\116\120\116"
+-- STATE
+local currentAction = "Finding candy..."
+local hopStart = tick()
+local logLines = {}
+local guiVisible = true
 
-local Iddnbw2biywiVXCv = "\70\105\110\100\105\110\x67\32\x63\x61\110\100\121\x2e\46\46"
-local ovlvSZnn0BnGnqsW2 = tick()
-local jhtBKcKvqCjqnZhvoKI_99 = {}
-local rvpZEBYHsKoynKZh_ = true
-
-local lUll09oRniibJfAJaMZcf=(bit32.bxor(bit32.bxor(53037,20056),6155))
-local I8doR2One8mHo5lUEcJYo8=(bit32.bxor(2022567,370558))
-
-local function qpDcZnunIZb50o5()
- if not (isfile and readfile) then return "" end
- local kY9eYnygLLMIq8rD, tliSoXc829lWO8 = pcall(function()
- if isfile(vgrBDii9nSAzSNlb8Ib2) then
- return readfile(vgrBDii9nSAzSNlb8Ib2)
- end
- return ""
- end)
- if kY9eYnygLLMIq8rD and tliSoXc829lWO8 then
- return (tliSoXc829lWO8:gsub("\94\x25\115\43", ""):gsub("\37\x73\x2b\36", ""))
- end
- return ""
+-- ===== WEBHOOK PERSISTENCE =====
+local function loadWebhook()
+    if not (isfile and readfile) then return "" end
+    local ok, content = pcall(function()
+        if isfile(WEBHOOK_FILE) then
+            return readfile(WEBHOOK_FILE)
+        end
+        return ""
+    end)
+    if ok and content then
+        return (content:gsub("^%s+", ""):gsub("%s+$", ""))
+    end
+    return ""
 end
 
-local IOs1cfDcBYoxisH9dchH_=(bit32.bxor(bit32.bxor(bit32.bxor(bit32.bxor(10619,31010),28054),35642),41775))
-local lWEe1Mzoh1B95g=(bit32.bxor(bit32.bxor(16453,24573),4266))
-local function CncR2iZFiTgIiqcOWulXqS(ansqkq95ko081NOzcr)
- if not writefile then return false end
- local kY9eYnygLLMIq8rD = pcall(function()
- writefile(vgrBDii9nSAzSNlb8Ib2, ansqkq95ko081NOzcr or "")
- end)
- return kY9eYnygLLMIq8rD
+local function saveWebhook(url)
+    if not writefile then return false end
+    local ok = pcall(function()
+        writefile(WEBHOOK_FILE, url or "")
+    end)
+    return ok
 end
 
-local lN5qM28uW8Rlss8xbbX = (bit32.bxor(2039707153,2039707153))
-local su0IXeIt1Sncb21CVind = (bit32.bxor(1093629548,1093629548))
-local aoHHBeB1qn1vSbSAnPse = nil
-local m1ojKIzbeZK8MBvPesH = qpDcZnunIZb50o5()
-local SMIsn0Bb19iuYDgT = (bit32.bxor(392052688,392052688))
-local ohwJcAnbqSIzlIZboiJ = (bit32.bxor(871441749,871441749))
+-- STATS + WEBHOOK
+local candyCollected = 0
+local doorsKnocked = 0
+local lastCandyRef = nil
+local webhookUrl = loadWebhook()
+local candySinceLastDoor = 0
+local lastDoorCandy = 0
 
-local p0hXTVzLqIXbK0=(bit32.bxor(14418753,15243971))
-local oeUfxbKmqnXqu82u9Ee=(string.rep("\x57",2))
-local nphOFdxUlaZeBGs=(bit32.bxor(bit32.bxor(5072,45660),41361))
-local bPeTke9SIR9WncsC0Ih9=(bit32.bxor(bit32.bxor(42260,29679),19849))
-local evI5CkOSxPcnmCjuig=(bit32.bxor(bit32.bxor(bit32.bxor(47911,52682),53287),58046))
-local function nXJ5ZVBeIyLhuiqnKJ2C(msg)
- local fbYJlKSREOAnBg8 = os.date("\37\x48\58\37\x4d\58\37\83")
- table.insert(jhtBKcKvqCjqnZhvoKI_99, (bit32.bxor(1268304762,1268304763)), fbYJlKSREOAnBg8 .. "\x20\32" .. msg)
- while #jhtBKcKvqCjqnZhvoKI_99 > a5veEGCnjuqBAR5 do
- table.remove(jhtBKcKvqCjqnZhvoKI_99)
- end
+local function addLog(msg)
+    local t = os.date("%H:%M:%S")
+    table.insert(logLines, 1, t .. "  " .. msg)
+    while #logLines > MAX_LOG_LINES do
+        table.remove(logLines)
+    end
 end
 
-local function nWePttRfiCsgyf(sec)
- sec = math.max((bit32.bxor(97126529,97126529)), math.floor(sec))
- local pPCwF_htUdgizcMqxM = math.floor(sec / (bit32.bxor(1690364370,1690364398)))
- local hYzWq1zaxsq1vpWz2lw = sec % (bit32.bxor(1472258766,1472258802))
- return string.format("\37\48\x32\100\58\37\48\50\100", pPCwF_htUdgizcMqxM, hYzWq1zaxsq1vpWz2lw)
+local function formatTime(sec)
+    sec = math.max(0, math.floor(sec))
+    local m = math.floor(sec / 60)
+    local s = sec % 60
+    return string.format("%02d:%02d", m, s)
 end
 
-local rfcu9tSU1bz1Ijzz1b=(bit32.bxor(bit32.bxor(24819,31372),29931))
-local rItty9uyK_IAeq=(bit32.bxor(bit32.bxor(64360,54596),62806))
-local cMSqCxFigDHjcCNjoinbeW=((3604>5836) and false or true)
-
-local function uuifqh0EWfzY0nElnbocb(fhYTbgiylCFf9r, desc, color)
- if m1ojKIzbeZK8MBvPesH == "" then return false end
- local kY9eYnygLLMIq8rD = pcall(function()
- local cOK50Ypye1IYLsNptS = HttpService:JSONEncode({
- username = "\x43\x61\x74\76\97\x7a\121",
- embeds = {{
- title = fhYTbgiylCFf9r,
- description = desc,
- color = color or 0x78c8ff,
- timestamp = os.date("\x21\37\x59\x2d\x25\x6d\45\37\100\x54\37\72\x3a\x25\77\x3a\x25\83\x5a"),
- footer = { text = "\x43\97\116\76\x61\122\121\x20\65\117\x74\111\x20\67\x61\110\100\x79" },
- }},
- })
- local ejlin0xijJTBnWxHj = request or (syn and syn.request) or (http and http.request) or http_request
- if ejlin0xijJTBnWxHj then
- ejlin0xijJTBnWxHj({
- Url = m1ojKIzbeZK8MBvPesH,
- Method = "\x50\x4f\x53\x54",
- Headers = { ["\67\111\110\116\x65\x6e\116\45\84\121\x70\101"] = "\x61\x70\112\x6c\x69\x63\x61\x74\x69\x6f\110\47\x6a\115\111\x6e" },
- Body = cOK50Ypye1IYLsNptS,
- })
- end
- end)
- return kY9eYnygLLMIq8rD
+-- ===== WEBHOOK =====
+local function sendWebhook(title, desc, color)
+    if webhookUrl == "" then return false end
+    local ok = pcall(function()
+        local body = HttpService:JSONEncode({
+            username = "CatLazy",
+            embeds = {{
+                title = title,
+                description = desc,
+                color = color or 0x78c8ff,
+                timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+                footer = { text = "CatLazy Auto Candy" },
+            }},
+        })
+        local fn = request or (syn and syn.request) or (http and http.request) or http_request
+        if fn then
+            fn({
+                Url = webhookUrl,
+                Method = "POST",
+                Headers = { ["Content-Type"] = "application/json" },
+                Body = body,
+            })
+        end
+    end)
+    return ok
 end
 
-local ZKhHbolJ5qszq1mIpnly=(string.rep("\x51",4))
-local BWDxBc2n9B8nVBtbl25=((7822>1855) and false or true)
-local Bk59SUZyFZVS9hR=((7252-9199+1)%256)
-local xRk0vSlqABgSHhBixOXI=(bit32.bxor(13153786,6951760))
-
-local function ShLHDlsilBsHBqqy()
- if gethui then
- local kY9eYnygLLMIq8rD, BWE2KiqwooxieIylz = pcall(gethui)
- if kY9eYnygLLMIq8rD and BWE2KiqwooxieIylz then return BWE2KiqwooxieIylz end
- end
- return fgVXlOSo2nuknDCiu8I:WaitForChild("\80\108\97\x79\101\x72\71\x75\x69")
+-- ===== GET GUI PARENT =====
+local function getGuiParent()
+    if gethui then
+        local ok, h = pcall(gethui)
+        if ok and h then return h end
+    end
+    return player:WaitForChild("PlayerGui")
 end
-local dwwO8syTd1SNVcR1YibAS = ShLHDlsilBsHBqqy()
+local guiParent = getGuiParent()
 
-local tOvOnmvZUCHA58T5TyJ1bT=(math.max(475,163))
-local mGOtgSYbmwoWbGcgX8wq=(bit32.bxor(bit32.bxor(19285,4603),59682))
-for wgmbTcoOGO8CDvI9Yht, OrvlAKgHPLdgtkN0 in ipairs(dwwO8syTd1SNVcR1YibAS:GetChildren()) do
- if OrvlAKgHPLdgtkN0.Name == "\67\x61\x74\76\97\122\x79\77\x61\x69\x6e" or OrvlAKgHPLdgtkN0.Name == "\x43\x61\x74\x4c\97\122\x79\x54\111\103\x67\108\101" or OrvlAKgHPLdgtkN0.Name == "\x43\97\116\76\x61\x7a\121\x57\101\x62\104\111\x6f\107" then
- OrvlAKgHPLdgtkN0:Destroy()
- end
+for _, g in ipairs(guiParent:GetChildren()) do
+    if g.Name == "CatLazyMain" or g.Name == "CatLazyToggle" or g.Name == "CatLazyWebhook" then
+        g:Destroy()
+    end
 end
 
-local llM1dhmD1eeSMcoYxeYd=(#{292,37,230,610,856})
-local _V5yitGsnc09zsh8=(#"\x3e\84\x29\108\40\98\x50\124\49")
-local ohSzsz9eavtlqOcdllXi=(math.max(852,462,841,587))
-
-local tRTUxkezcXiCly5g1Bq = {
- bg = Color3.fromRGB((bit32.bxor(1010311750,1010311764)), (bit32.bxor(1371464125,1371464111)), (bit32.bxor(1662460901,1662460925))),
- bg2 = Color3.fromRGB((bit32.bxor(100095963,100095941)), (bit32.bxor(613320724,613320714)), (bit32.bxor(2140778453,2140778495))),
- accent = Color3.fromRGB((bit32.bxor(1292747426,1292747482)), (bit32.bxor(2004464160,2004464360)), (bit32.bxor(1290453568,1290453695))),
- accent2 = Color3.fromRGB((bit32.bxor(891869704,891869884)), (bit32.bxor(2139087793,2139087817)), (bit32.bxor(1258983981,1258984146))),
- success = Color3.fromRGB((bit32.bxor(655728906,655728986)), (bit32.bxor(1844856755,1844856687)), (bit32.bxor(915779647,915779763))),
- danger = Color3.fromRGB((bit32.bxor(201533950,201533697)), (bit32.bxor(2115095705,2115095747)), (bit32.bxor(729853038,729852980))),
- text = Color3.fromRGB((bit32.bxor(1785406726,1785406969)), (bit32.bxor(285788942,285789169)), (bit32.bxor(2103985975,2103986120))),
- textDim = Color3.fromRGB((bit32.bxor(1164248245,1164248085)), (bit32.bxor(2069628156,2069627996)), (bit32.bxor(576240632,576240471))),
- log = Color3.fromRGB((bit32.bxor(349414569,349414437)), (bit32.bxor(735249655,735249471)), (bit32.bxor(834158842,834158670))),
+-- ===== PALETTE =====
+local C = {
+    bg        = Color3.fromRGB(18, 18, 24),
+    bg2       = Color3.fromRGB(30, 30, 42),
+    accent    = Color3.fromRGB(120, 200, 255),
+    accent2   = Color3.fromRGB(180, 120, 255),
+    success   = Color3.fromRGB(80, 220, 140),
+    danger    = Color3.fromRGB(255, 90, 90),
+    text      = Color3.fromRGB(255, 255, 255),
+    textDim   = Color3.fromRGB(160, 160, 175),
+    log       = Color3.fromRGB(140, 200, 180),
 }
 
-local _Yi0h9Kemq2l5uozLcbEOr=(math.min(35,875,319,251))
-local g0nSmpWTJ18mRYb15eK=(bit32.bxor(bit32.bxor(5029,50836),7957))
-local uiAjdUo5gBu2ozGNw=("\x64".."\x56".."\x3d".."\121")
-local wuIcvCCUsNwfSugq=(math.max(630,393,72))
-local uozsG2FWwLqJNtbgVqRYi=(bit32.bxor(bit32.bxor(16492,4054),14255))
+-- ===== MAIN PANEL =====
+local mainGui = Instance.new("ScreenGui")
+mainGui.Name = "CatLazyMain"
+mainGui.ResetOnSpawn = false
+mainGui.IgnoreGuiInset = true
+mainGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+mainGui.DisplayOrder = 999
+mainGui.Parent = guiParent
 
-local aoZceqGlZJY9YqkIOb = Instance.new("\x53\99\114\101\101\110\71\x75\x69")
-aoZceqGlZJY9YqkIOb.Name = "\67\x61\116\x4c\97\122\121\x4d\97\x69\x6e"
-aoZceqGlZJY9YqkIOb.ResetOnSpawn = false
-aoZceqGlZJY9YqkIOb.IgnoreGuiInset = true
-aoZceqGlZJY9YqkIOb.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-aoZceqGlZJY9YqkIOb.DisplayOrder = (bit32.bxor(697386062,697386921))
-aoZceqGlZJY9YqkIOb.Parent = dwwO8syTd1SNVcR1YibAS
+local panel = Instance.new("Frame")
+panel.Size = UDim2.new(0, 340, 0, 240)
+panel.Position = UDim2.new(0.5, -170, 0, 50)
+panel.BackgroundColor3 = C.bg
+panel.BackgroundTransparency = 0.08
+panel.BorderSizePixel = 0
+panel.ClipsDescendants = true
+panel.Active = true
+panel.Parent = mainGui
 
-local mvdiAPvXB9Gv1IW0fqoH = Instance.new("\x46\x72\x61\x6d\101")
-mvdiAPvXB9Gv1IW0fqoH.Size = UDim2.new((bit32.bxor(1684251161,1684251161)), (bit32.bxor(328178362,328178670)), (bit32.bxor(577496620,577496620)), (bit32.bxor(1943876612,1943876852)))
-mvdiAPvXB9Gv1IW0fqoH.Position = UDim2.new(0.5, -(bit32.bxor(1172114525,1172114679)), (bit32.bxor(780277743,780277743)), (bit32.bxor(35507298,35507280)))
-mvdiAPvXB9Gv1IW0fqoH.BackgroundColor3 = tRTUxkezcXiCly5g1Bq.bg
-mvdiAPvXB9Gv1IW0fqoH.BackgroundTransparency = 0.08
-mvdiAPvXB9Gv1IW0fqoH.BorderSizePixel = (bit32.bxor(1367264691,1367264691))
-mvdiAPvXB9Gv1IW0fqoH.ClipsDescendants = true
-mvdiAPvXB9Gv1IW0fqoH.Active = true
-mvdiAPvXB9Gv1IW0fqoH.Parent = aoZceqGlZJY9YqkIOb
+local panelCorner = Instance.new("UICorner")
+panelCorner.CornerRadius = UDim.new(0, 16)
+panelCorner.Parent = panel
 
-local a0mTFWbOWOeoXghx9=(bit32.bxor(bit32.bxor(36811,1831),63646))
-local ceIzm80hwtWUl0qCKzC9Tf=(bit32.bxor(bit32.bxor(1247,58954),17777))
-local IgKwyTiIbwFklZklHdIS=(bit32.bxor(bit32.bxor(bit32.bxor(bit32.bxor(53615,32424),62518),57078),5266))
-local y1BgapqDbscbo22 = Instance.new("\x55\73\67\x6f\x72\x6e\x65\114")
-y1BgapqDbscbo22.CornerRadius = UDim.new((bit32.bxor(1468534862,1468534862)), (bit32.bxor(500370441,500370457)))
-y1BgapqDbscbo22.Parent = mvdiAPvXB9Gv1IW0fqoH
-
-local acl228AqLYDobSwoq = Instance.new("\85\x49\x47\114\x61\100\x69\101\x6e\x74")
-acl228AqLYDobSwoq.Color = ColorSequence.new{
- ColorSequenceKeypoint.new((bit32.bxor(1990114926,1990114926)), tRTUxkezcXiCly5g1Bq.bg2),
- ColorSequenceKeypoint.new((bit32.bxor(761985167,761985166)), tRTUxkezcXiCly5g1Bq.bg),
+local panelGradient = Instance.new("UIGradient")
+panelGradient.Color = ColorSequence.new{
+    ColorSequenceKeypoint.new(0, C.bg2),
+    ColorSequenceKeypoint.new(1, C.bg),
 }
-acl228AqLYDobSwoq.Rotation = (bit32.bxor(1222202621,1222202490))
-acl228AqLYDobSwoq.Parent = mvdiAPvXB9Gv1IW0fqoH
+panelGradient.Rotation = 135
+panelGradient.Parent = panel
 
-local Bh0ydIHqeH5vceiMPhuI=(math.max(733,288))
-local yabwuCFizIlIZIbw=(math.max(568,726))
-local SzrROgRhSqLBeIPsvIx=(math.min(913,676,819,496))
-local mniOsKol5xloR2aRdho9S=(#"\111\48\x20\x2a\x68\x7d")
-local jcPnTUa8CetpbcHP = Instance.new("\85\x49\83\116\x72\111\x6b\101")
-jcPnTUa8CetpbcHP.Color = tRTUxkezcXiCly5g1Bq.accent
-jcPnTUa8CetpbcHP.Thickness = 1.5
-jcPnTUa8CetpbcHP.Transparency = 0.55
-jcPnTUa8CetpbcHP.Parent = mvdiAPvXB9Gv1IW0fqoH
+local panelStroke = Instance.new("UIStroke")
+panelStroke.Color = C.accent
+panelStroke.Thickness = 1.5
+panelStroke.Transparency = 0.55
+panelStroke.Parent = panel
 
-local zSFZChqlRwI95isy = Instance.new("\x49\109\97\103\101\76\x61\98\101\108")
-zSFZChqlRwI95isy.Name = "\x53\104\97\100\111\119"
-zSFZChqlRwI95isy.AnchorPoint = Vector2.new(0.5, 0.5)
-zSFZChqlRwI95isy.Position = UDim2.new(0.5, (bit32.bxor(1490515215,1490515215)), 0.5, (bit32.bxor(1906399075,1906399077)))
-zSFZChqlRwI95isy.Size = UDim2.new((bit32.bxor(80270680,80270681)), (bit32.bxor(1385793335,1385793291)), (bit32.bxor(1815797998,1815797999)), (bit32.bxor(702187905,702187965)))
-zSFZChqlRwI95isy.BackgroundTransparency = (bit32.bxor(1385572543,1385572542))
-zSFZChqlRwI95isy.Image = "\x72\98\120\97\115\115\x65\116\105\x64\58\47\x2f\x36\x30\49\x34\x32\54\49\57\57\x33"
-zSFZChqlRwI95isy.ImageColor3 = Color3.fromRGB((bit32.bxor(1610792333,1610792333)), (bit32.bxor(1406592472,1406592472)), (bit32.bxor(1309230463,1309230463)))
-zSFZChqlRwI95isy.ImageTransparency = 0.5
-zSFZChqlRwI95isy.ScaleType = Enum.ScaleType.Slice
-zSFZChqlRwI95isy.SliceCenter = Rect.new((bit32.bxor(700034549,700034500)), (bit32.bxor(872107173,872107156)), (bit32.bxor(1647419893,1647419447)), (bit32.bxor(1097261858,1097261792)))
-zSFZChqlRwI95isy.ZIndex = -(bit32.bxor(504445618,504445619))
-zSFZChqlRwI95isy.Parent = mvdiAPvXB9Gv1IW0fqoH
+local shadow = Instance.new("ImageLabel")
+shadow.Name = "Shadow"
+shadow.AnchorPoint = Vector2.new(0.5, 0.5)
+shadow.Position = UDim2.new(0.5, 0, 0.5, 6)
+shadow.Size = UDim2.new(1, 60, 1, 60)
+shadow.BackgroundTransparency = 1
+shadow.Image = "rbxassetid://6014261993"
+shadow.ImageColor3 = Color3.fromRGB(0, 0, 0)
+shadow.ImageTransparency = 0.5
+shadow.ScaleType = Enum.ScaleType.Slice
+shadow.SliceCenter = Rect.new(49, 49, 450, 450)
+shadow.ZIndex = -1
+shadow.Parent = panel
 
-local _s5cEinc8ISlqWmisz9nk=(bit32.bxor(bit32.bxor(45300,3493),41835))
-local uRTlZSklCNlgMbKoDzoTH=((7507>8851) and false or true)
-local nCqzZSsnbbdAbiS=(#{934,763})
+-- ===== HEADER =====
+local header = Instance.new("Frame")
+header.Size = UDim2.new(1, 0, 0, 40)
+header.BackgroundTransparency = 1
+header.Parent = panel
 
-local n1hCxqNus1Lqhyiii = Instance.new("\x46\114\97\109\101")
-n1hCxqNus1Lqhyiii.Size = UDim2.new((bit32.bxor(1015197296,1015197297)), (bit32.bxor(687173199,687173199)), (bit32.bxor(406835639,406835639)), (bit32.bxor(1229665534,1229665494)))
-n1hCxqNus1Lqhyiii.BackgroundTransparency = (bit32.bxor(2082101070,2082101071))
-n1hCxqNus1Lqhyiii.Parent = mvdiAPvXB9Gv1IW0fqoH
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -80, 1, 0)
+title.Position = UDim2.new(0, 16, 0, 0)
+title.BackgroundTransparency = 1
+title.Text = "CatLazy"
+title.TextColor3 = C.text
+title.TextSize = 20
+title.Font = Enum.Font.GothamBold
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Parent = header
 
-local oiG0Cbq9gyblssNzbH=("\118".."\x23".."\62".."\x2b".."\37".."\x31")
-local b5Y5WycNekd95osuI8=(math.min(938,243))
-local cnTIIHWxquG0beKCmJb=(string.rep("\x4d",4))
-local iAUBnLh0svnFcuiWSb0no=(#{505,690,253})
-local fhYTbgiylCFf9r = Instance.new("\84\101\120\116\x4c\97\98\101\x6c")
-fhYTbgiylCFf9r.Size = UDim2.new((bit32.bxor(997065144,997065145)), -(bit32.bxor(173497072,173496992)), (bit32.bxor(970785845,970785844)), (bit32.bxor(1055725962,1055725962)))
-fhYTbgiylCFf9r.Position = UDim2.new((bit32.bxor(879425576,879425576)), (bit32.bxor(4545775,4545791)), (bit32.bxor(1342155518,1342155518)), (bit32.bxor(1571056446,1571056446)))
-fhYTbgiylCFf9r.BackgroundTransparency = (bit32.bxor(502982051,502982050))
-fhYTbgiylCFf9r.Text = "\x43\x61\x74\x4c\x61\x7a\121"
-fhYTbgiylCFf9r.TextColor3 = tRTUxkezcXiCly5g1Bq.text
-fhYTbgiylCFf9r.TextSize = (bit32.bxor(219120230,219120242))
-fhYTbgiylCFf9r.Font = Enum.Font.GothamBold
-fhYTbgiylCFf9r.TextXAlignment = Enum.TextXAlignment.Left
-fhYTbgiylCFf9r.Parent = n1hCxqNus1Lqhyiii
+local badge = Instance.new("TextLabel")
+badge.Size = UDim2.new(0, 52, 0, 20)
+badge.Position = UDim2.new(1, -68, 0.5, -10)
+badge.BackgroundColor3 = C.accent
+badge.BackgroundTransparency = 0.75
+badge.Text = "AUTO"
+badge.TextColor3 = C.accent
+badge.TextSize = 11
+badge.Font = Enum.Font.GothamBold
+badge.BorderSizePixel = 0
+badge.Parent = header
 
-local vhzCmOCWTbcb5xCPPS=(#{399,60})
-local kxsgiYdNN2iuFZScouiM1=((6176>6261) and false or true)
-local r9ggqO92nUoZDr1yi5nhS=(#"\x71\x56\98\37\x73\x6b\55\x4b")
-local qt8bkKsC5Ung2Fldz2yoN = Instance.new("\84\101\120\116\76\97\98\101\x6c")
-qt8bkKsC5Ung2Fldz2yoN.Size = UDim2.new((bit32.bxor(675917390,675917390)), (bit32.bxor(1511532073,1511532061)), (bit32.bxor(1848490027,1848490027)), (bit32.bxor(632358168,632358156)))
-qt8bkKsC5Ung2Fldz2yoN.Position = UDim2.new((bit32.bxor(1273756814,1273756815)), -(bit32.bxor(1834714914,1834714982)), 0.5, -(bit32.bxor(1712074299,1712074289)))
-qt8bkKsC5Ung2Fldz2yoN.BackgroundColor3 = tRTUxkezcXiCly5g1Bq.accent
-qt8bkKsC5Ung2Fldz2yoN.BackgroundTransparency = 0.75
-qt8bkKsC5Ung2Fldz2yoN.Text = "\65\x55\x54\79"
-qt8bkKsC5Ung2Fldz2yoN.TextColor3 = tRTUxkezcXiCly5g1Bq.accent
-qt8bkKsC5Ung2Fldz2yoN.TextSize = (bit32.bxor(879979852,879979847))
-qt8bkKsC5Ung2Fldz2yoN.Font = Enum.Font.GothamBold
-qt8bkKsC5Ung2Fldz2yoN.BorderSizePixel = (bit32.bxor(368742185,368742185))
-qt8bkKsC5Ung2Fldz2yoN.Parent = n1hCxqNus1Lqhyiii
+local badgeCorner = Instance.new("UICorner")
+badgeCorner.CornerRadius = UDim.new(0, 6)
+badgeCorner.Parent = badge
 
-local l0iusnkFeyvBDfUTbIH=((1551>2215) and false or true)
-local b_IzP5LsvoxpNl2X=((1284>5240) and false or true)
-local gejPcco_nY8oyKm1UEbh=(bit32.bxor(bit32.bxor(bit32.bxor(bit32.bxor(52940,28115),64567),36601),36781))
-local f2nBPNcuN2cSyzhciZiw2F = Instance.new("\85\73\67\x6f\x72\110\x65\x72")
-f2nBPNcuN2cSyzhciZiw2F.CornerRadius = UDim.new((bit32.bxor(462914686,462914686)), (bit32.bxor(1794837655,1794837649)))
-f2nBPNcuN2cSyzhciZiw2F.Parent = qt8bkKsC5Ung2Fldz2yoN
+local sep1 = Instance.new("Frame")
+sep1.Size = UDim2.new(1, -32, 0, 1)
+sep1.Position = UDim2.new(0, 16, 0, 40)
+sep1.BackgroundColor3 = C.accent
+sep1.BackgroundTransparency = 0.8
+sep1.BorderSizePixel = 0
+sep1.Parent = panel
 
-local ZP1N1Svy5jlReJsBG = Instance.new("\70\114\97\x6d\x65")
-ZP1N1Svy5jlReJsBG.Size = UDim2.new((bit32.bxor(1871407448,1871407449)), -(bit32.bxor(299992223,299992255)), (bit32.bxor(614488222,614488222)), (bit32.bxor(1374587017,1374587016)))
-ZP1N1Svy5jlReJsBG.Position = UDim2.new((bit32.bxor(349730327,349730327)), (bit32.bxor(232094480,232094464)), (bit32.bxor(863746363,863746363)), (bit32.bxor(1213763086,1213763110)))
-ZP1N1Svy5jlReJsBG.BackgroundColor3 = tRTUxkezcXiCly5g1Bq.accent
-ZP1N1Svy5jlReJsBG.BackgroundTransparency = 0.8
-ZP1N1Svy5jlReJsBG.BorderSizePixel = (bit32.bxor(1111898452,1111898452))
-ZP1N1Svy5jlReJsBG.Parent = mvdiAPvXB9Gv1IW0fqoH
+-- ===== STATUS ROW =====
+local statusRow = Instance.new("Frame")
+statusRow.Size = UDim2.new(1, -32, 0, 28)
+statusRow.Position = UDim2.new(0, 16, 0, 50)
+statusRow.BackgroundTransparency = 1
+statusRow.Parent = panel
 
-local aClXwXIjKOKzgnG5=("\x45".."\x6e".."\x7d".."\77".."\x65".."\92".."\121")
-local uSbjfBXkhtykvco=(math.max(111,348))
+local statusDot = Instance.new("Frame")
+statusDot.Size = UDim2.new(0, 10, 0, 10)
+statusDot.Position = UDim2.new(0, 0, 0.5, -5)
+statusDot.BackgroundColor3 = C.success
+statusDot.BorderSizePixel = 0
+statusDot.Parent = statusRow
 
-local znoNiSlivYgl0BMXS55 = Instance.new("\70\x72\97\x6d\101")
-znoNiSlivYgl0BMXS55.Size = UDim2.new((bit32.bxor(1258465598,1258465599)), -(bit32.bxor(883066199,883066231)), (bit32.bxor(269615117,269615117)), (bit32.bxor(1201115383,1201115371)))
-znoNiSlivYgl0BMXS55.Position = UDim2.new((bit32.bxor(493181251,493181251)), (bit32.bxor(1921684981,1921684965)), (bit32.bxor(2055754838,2055754838)), (bit32.bxor(1498448411,1498448425)))
-znoNiSlivYgl0BMXS55.BackgroundTransparency = (bit32.bxor(566850848,566850849))
-znoNiSlivYgl0BMXS55.Parent = mvdiAPvXB9Gv1IW0fqoH
+local dotCorner = Instance.new("UICorner")
+dotCorner.CornerRadius = UDim.new(1, 0)
+dotCorner.Parent = statusDot
 
-local wOSoCCzT0zmIqixhIOq = Instance.new("\70\x72\x61\109\101")
-wOSoCCzT0zmIqixhIOq.Size = UDim2.new((bit32.bxor(241351647,241351647)), (bit32.bxor(2046713438,2046713428)), (bit32.bxor(1726486663,1726486663)), (bit32.bxor(1976898927,1976898917)))
-wOSoCCzT0zmIqixhIOq.Position = UDim2.new((bit32.bxor(1941792655,1941792655)), (bit32.bxor(458566489,458566489)), 0.5, -(bit32.bxor(1644184307,1644184310)))
-wOSoCCzT0zmIqixhIOq.BackgroundColor3 = tRTUxkezcXiCly5g1Bq.success
-wOSoCCzT0zmIqixhIOq.BorderSizePixel = (bit32.bxor(1874441868,1874441868))
-wOSoCCzT0zmIqixhIOq.Parent = znoNiSlivYgl0BMXS55
+local dotPulse = Instance.new("UIStroke")
+dotPulse.Color = C.success
+dotPulse.Thickness = 2
+dotPulse.Transparency = 0.4
+dotPulse.Parent = statusDot
 
-local Bs9IoKu5vq15oDqFZwZB=("\116".."\46".."\x74".."\x7d".."\x6b")
-local _nFAEnZJakF2iZZn=((7876+6815-13)%256)
-local z2oIWl8VtfFoe1=(bit32.bxor(11944109,164926))
-local kMqntMy8DnzBeqqNw5=(bit32.bxor(bit32.bxor(19539,43446),9729))
-local pLbB5Gi9gnoTqhig=(#{338,890})
-local rnFnD8A2JZYqsnX8gicTo = Instance.new("\x55\73\67\x6f\114\x6e\101\x72")
-rnFnD8A2JZYqsnX8gicTo.CornerRadius = UDim.new((bit32.bxor(165995365,165995364)), (bit32.bxor(2063279626,2063279626)))
-rnFnD8A2JZYqsnX8gicTo.Parent = wOSoCCzT0zmIqixhIOq
+local statusText = Instance.new("TextLabel")
+statusText.Size = UDim2.new(1, -20, 1, 0)
+statusText.Position = UDim2.new(0, 20, 0, 0)
+statusText.BackgroundTransparency = 1
+statusText.Text = "Finding candy..."
+statusText.TextColor3 = C.text
+statusText.TextSize = 14
+statusText.Font = Enum.Font.GothamMedium
+statusText.TextXAlignment = Enum.TextXAlignment.Left
+statusText.Parent = statusRow
 
-local inkec9BOTXqe2qyg8wioE = Instance.new("\x55\73\x53\116\114\111\107\101")
-inkec9BOTXqe2qyg8wioE.Color = tRTUxkezcXiCly5g1Bq.success
-inkec9BOTXqe2qyg8wioE.Thickness = (bit32.bxor(1076993164,1076993166))
-inkec9BOTXqe2qyg8wioE.Transparency = 0.4
-inkec9BOTXqe2qyg8wioE.Parent = wOSoCCzT0zmIqixhIOq
-
-local gCnOnP95iyq1dbWKOO=(bit32.bxor(bit32.bxor(525,31572),9415))
-local S0qzc0mjwteSbILYon2=((5640>1666) and false or true)
-local SmISDT51gi2lCur2gNVzPl=(bit32.bxor(bit32.bxor(bit32.bxor(64345,57934),36518),41908))
-local xhg0oXBxBBicBD=(math.min(355,741,433,476))
-local sxIct_KddUtWnWibs2y9T = Instance.new("\84\x65\x78\116\x4c\97\98\101\108")
-sxIct_KddUtWnWibs2y9T.Size = UDim2.new((bit32.bxor(78110846,78110847)), -(bit32.bxor(337181334,337181314)), (bit32.bxor(2036375026,2036375027)), (bit32.bxor(35308254,35308254)))
-sxIct_KddUtWnWibs2y9T.Position = UDim2.new((bit32.bxor(283681535,283681535)), (bit32.bxor(1979444510,1979444490)), (bit32.bxor(644981795,644981795)), (bit32.bxor(489283292,489283292)))
-sxIct_KddUtWnWibs2y9T.BackgroundTransparency = (bit32.bxor(704117411,704117410))
-sxIct_KddUtWnWibs2y9T.Text = "\70\x69\x6e\100\x69\110\103\32\99\x61\110\100\x79\46\46\46"
-sxIct_KddUtWnWibs2y9T.TextColor3 = tRTUxkezcXiCly5g1Bq.text
-sxIct_KddUtWnWibs2y9T.TextSize = (bit32.bxor(1775165877,1775165883))
-sxIct_KddUtWnWibs2y9T.Font = Enum.Font.GothamMedium
-sxIct_KddUtWnWibs2y9T.TextXAlignment = Enum.TextXAlignment.Left
-sxIct_KddUtWnWibs2y9T.Parent = znoNiSlivYgl0BMXS55
-
-local ZsSZ9z0GCCcLouFtbCinlZ=("\x4e".."\47".."\x58")
-local jiCfAf99z5nnveOoK9w=(string.rep("\x43",1))
-local dOkxON5nVElEti=(string.rep("\x47",3))
-local BIolcWUiIarieS9bv=(bit32.bxor(bit32.bxor(bit32.bxor(bit32.bxor(34194,8352),7555),58544),40332))
-local qYitoehsndEpog0wdvlNue=(bit32.bxor(bit32.bxor(bit32.bxor(20704,4037),7645),54856))
 spawn(function()
- while aoZceqGlZJY9YqkIOb.Parent do
- local yzr8TFoYBmgmq0gmS = TweenService:Create(inkec9BOTXqe2qyg8wioE, TweenInfo.new(0.9, Enum.EasingStyle.Sine), {
- Transparency = 0.9,
- Thickness = (bit32.bxor(1585370661,1585370657)),
- })
- yzr8TFoYBmgmq0gmS:Play()
- yzr8TFoYBmgmq0gmS.Completed:Wait()
- local sAivwkjKyTnwqBIwoZ = TweenService:Create(inkec9BOTXqe2qyg8wioE, TweenInfo.new(0.9, Enum.EasingStyle.Sine), {
- Transparency = 0.4,
- Thickness = (bit32.bxor(435868379,435868377)),
- })
- sAivwkjKyTnwqBIwoZ:Play()
- sAivwkjKyTnwqBIwoZ.Completed:Wait()
- end
+    while mainGui.Parent do
+        local tween = TweenService:Create(dotPulse, TweenInfo.new(0.9, Enum.EasingStyle.Sine), {
+            Transparency = 0.9,
+            Thickness = 4,
+        })
+        tween:Play()
+        tween.Completed:Wait()
+        local tween2 = TweenService:Create(dotPulse, TweenInfo.new(0.9, Enum.EasingStyle.Sine), {
+            Transparency = 0.4,
+            Thickness = 2,
+        })
+        tween2:Play()
+        tween2.Completed:Wait()
+    end
 end)
 
-local SZCCbdjTLssOivw=(math.min(144,974,665,988))
-local r9n1IXwcwygtTcybTz=((129>8930) and false or true)
-local z0hofMvz9bsizV0XCkA=((7465-2693+58)%256)
-local ssipCaTLJIfZbbwEGylf8=("\x2e".."\x2d".."\x29".."\x56".."\x33")
-local IwzhsqkuStkyiFLiT9jme2=((9396>6180) and false or true)
+-- ===== STATS ROW =====
+local statsRow = Instance.new("Frame")
+statsRow.Size = UDim2.new(1, -32, 0, 20)
+statsRow.Position = UDim2.new(0, 16, 0, 80)
+statsRow.BackgroundTransparency = 1
+statsRow.Parent = panel
 
-local wnwvyjg0RIducDK = Instance.new("\x46\x72\97\109\101")
-wnwvyjg0RIducDK.Size = UDim2.new((bit32.bxor(1320651192,1320651193)), -(bit32.bxor(1449608568,1449608536)), (bit32.bxor(1980081411,1980081411)), (bit32.bxor(1754351402,1754351422)))
-wnwvyjg0RIducDK.Position = UDim2.new((bit32.bxor(1119188117,1119188117)), (bit32.bxor(2053252609,2053252625)), (bit32.bxor(245935732,245935732)), (bit32.bxor(1345932241,1345932161)))
-wnwvyjg0RIducDK.BackgroundTransparency = (bit32.bxor(939583300,939583301))
-wnwvyjg0RIducDK.Parent = mvdiAPvXB9Gv1IW0fqoH
+local statLabel = Instance.new("TextLabel")
+statLabel.Size = UDim2.new(1, 0, 1, 0)
+statLabel.BackgroundTransparency = 1
+statLabel.Text = "Candy: 0   |   Doors: 0"
+statLabel.TextColor3 = C.accent2
+statLabel.TextSize = 12
+statLabel.Font = Enum.Font.GothamBold
+statLabel.TextXAlignment = Enum.TextXAlignment.Left
+statLabel.Parent = statsRow
 
-local sFl_LoINa9TZTuEwKbP = Instance.new("\x54\x65\120\116\76\97\98\x65\108")
-sFl_LoINa9TZTuEwKbP.Size = UDim2.new((bit32.bxor(1700120011,1700120010)), (bit32.bxor(1887077247,1887077247)), (bit32.bxor(1288667755,1288667754)), (bit32.bxor(1552540961,1552540961)))
-sFl_LoINa9TZTuEwKbP.BackgroundTransparency = (bit32.bxor(1974814887,1974814886))
-sFl_LoINa9TZTuEwKbP.Text = "\67\x61\110\x64\121\58\x20\48\x20\x20\32\124\32\32\x20\x44\111\x6f\x72\x73\x3a\32\x30"
-sFl_LoINa9TZTuEwKbP.TextColor3 = tRTUxkezcXiCly5g1Bq.accent2
-sFl_LoINa9TZTuEwKbP.TextSize = (bit32.bxor(2097180704,2097180716))
-sFl_LoINa9TZTuEwKbP.Font = Enum.Font.GothamBold
-sFl_LoINa9TZTuEwKbP.TextXAlignment = Enum.TextXAlignment.Left
-sFl_LoINa9TZTuEwKbP.Parent = wnwvyjg0RIducDK
+-- ===== PROGRESS BAR =====
+local progressRow = Instance.new("Frame")
+progressRow.Size = UDim2.new(1, -32, 0, 34)
+progressRow.Position = UDim2.new(0, 16, 0, 104)
+progressRow.BackgroundTransparency = 1
+progressRow.Parent = panel
 
-local iX1m18EsuI2Aznl=(math.max(746,666))
-local ZklrDcI9iCCcfeOr5VolI=(#{816,403,661})
+local progressLabel = Instance.new("TextLabel")
+progressLabel.Size = UDim2.new(1, 0, 0, 14)
+progressLabel.BackgroundTransparency = 1
+progressLabel.Text = "NEXT HOP"
+progressLabel.TextColor3 = C.textDim
+progressLabel.TextSize = 10
+progressLabel.Font = Enum.Font.GothamBold
+progressLabel.TextXAlignment = Enum.TextXAlignment.Left
+progressLabel.Parent = progressRow
 
-local xRRXGGOjOtV1YuYlYTZi = Instance.new("\x46\114\x61\109\x65")
-xRRXGGOjOtV1YuYlYTZi.Size = UDim2.new((bit32.bxor(37216840,37216841)), -(bit32.bxor(277668103,277668135)), (bit32.bxor(1200288545,1200288545)), (bit32.bxor(287952844,287952878)))
-xRRXGGOjOtV1YuYlYTZi.Position = UDim2.new((bit32.bxor(1169496537,1169496537)), (bit32.bxor(156596674,156596690)), (bit32.bxor(1159716135,1159716135)), (bit32.bxor(219244972,219244996)))
-xRRXGGOjOtV1YuYlYTZi.BackgroundTransparency = (bit32.bxor(1987875950,1987875951))
-xRRXGGOjOtV1YuYlYTZi.Parent = mvdiAPvXB9Gv1IW0fqoH
+local progressTime = Instance.new("TextLabel")
+progressTime.Size = UDim2.new(0, 60, 0, 14)
+progressTime.Position = UDim2.new(1, -60, 0, 0)
+progressTime.BackgroundTransparency = 1
+progressTime.Text = "00:00"
+progressTime.TextColor3 = C.accent
+progressTime.TextSize = 11
+progressTime.Font = Enum.Font.GothamBold
+progressTime.TextXAlignment = Enum.TextXAlignment.Right
+progressTime.Parent = progressRow
 
-local fO1VX_a5NeFfwAoqKq = Instance.new("\x54\101\120\116\76\97\x62\x65\108")
-fO1VX_a5NeFfwAoqKq.Size = UDim2.new((bit32.bxor(357114268,357114269)), (bit32.bxor(494887005,494887005)), (bit32.bxor(143054910,143054910)), (bit32.bxor(1006241334,1006241336)))
-fO1VX_a5NeFfwAoqKq.BackgroundTransparency = (bit32.bxor(376667221,376667220))
-fO1VX_a5NeFfwAoqKq.Text = "\78\69\x58\x54\x20\x48\79\x50"
-fO1VX_a5NeFfwAoqKq.TextColor3 = tRTUxkezcXiCly5g1Bq.textDim
-fO1VX_a5NeFfwAoqKq.TextSize = (bit32.bxor(28635094,28635100))
-fO1VX_a5NeFfwAoqKq.Font = Enum.Font.GothamBold
-fO1VX_a5NeFfwAoqKq.TextXAlignment = Enum.TextXAlignment.Left
-fO1VX_a5NeFfwAoqKq.Parent = xRRXGGOjOtV1YuYlYTZi
+local progressBg = Instance.new("Frame")
+progressBg.Size = UDim2.new(1, 0, 0, 6)
+progressBg.Position = UDim2.new(0, 0, 0, 20)
+progressBg.BackgroundColor3 = C.bg2
+progressBg.BackgroundTransparency = 0.3
+progressBg.BorderSizePixel = 0
+progressBg.Parent = progressRow
 
-local qTflopobhTUMciIG=(bit32.bxor(14823984,10770788))
-local uholqgcqcBwMGcW9z=(bit32.bxor(12945096,10107791))
-local BwnAZncuqWivAWIBB=(string.rep("\x54",2))
-local woTE2ifclxyqie=(bit32.bxor(bit32.bxor(29451,13720),45373))
-local hlliX_gRiOVYTAZ = Instance.new("\84\x65\120\116\x4c\x61\98\x65\x6c")
-hlliX_gRiOVYTAZ.Size = UDim2.new((bit32.bxor(57635593,57635593)), (bit32.bxor(110550522,110550470)), (bit32.bxor(806502916,806502916)), (bit32.bxor(1555785786,1555785780)))
-hlliX_gRiOVYTAZ.Position = UDim2.new((bit32.bxor(1179726700,1179726701)), -(bit32.bxor(1081226530,1081226526)), (bit32.bxor(215379083,215379083)), (bit32.bxor(1124401857,1124401857)))
-hlliX_gRiOVYTAZ.BackgroundTransparency = (bit32.bxor(917220978,917220979))
-hlliX_gRiOVYTAZ.Text = "\48\48\x3a\48\x30"
-hlliX_gRiOVYTAZ.TextColor3 = tRTUxkezcXiCly5g1Bq.accent
-hlliX_gRiOVYTAZ.TextSize = (bit32.bxor(656521091,656521096))
-hlliX_gRiOVYTAZ.Font = Enum.Font.GothamBold
-hlliX_gRiOVYTAZ.TextXAlignment = Enum.TextXAlignment.Right
-hlliX_gRiOVYTAZ.Parent = xRRXGGOjOtV1YuYlYTZi
+local bgCorner = Instance.new("UICorner")
+bgCorner.CornerRadius = UDim.new(1, 0)
+bgCorner.Parent = progressBg
 
-local anMEiwskelbPYn=(#{507,855,78,950,255,85})
-local dISynfqcc2ni2RZ9=(string.rep("\x55",4))
-local yZeqNt2JY909yCh9B=(math.min(45,549,827,605))
-local zqeYEJBFvZKqJ1t9hqi=("\x47".."\80".."\72")
-local j22cN0o8Aykknn = Instance.new("\70\114\x61\109\101")
-j22cN0o8Aykknn.Size = UDim2.new((bit32.bxor(491249253,491249252)), (bit32.bxor(1173563366,1173563366)), (bit32.bxor(1659670009,1659670009)), (bit32.bxor(1434860840,1434860846)))
-j22cN0o8Aykknn.Position = UDim2.new((bit32.bxor(1860271897,1860271897)), (bit32.bxor(1720382034,1720382034)), (bit32.bxor(1753610725,1753610725)), (bit32.bxor(337298716,337298696)))
-j22cN0o8Aykknn.BackgroundColor3 = tRTUxkezcXiCly5g1Bq.bg2
-j22cN0o8Aykknn.BackgroundTransparency = 0.3
-j22cN0o8Aykknn.BorderSizePixel = (bit32.bxor(444953480,444953480))
-j22cN0o8Aykknn.Parent = xRRXGGOjOtV1YuYlYTZi
+local progressFill = Instance.new("Frame")
+progressFill.Size = UDim2.new(1, 0, 1, 0)
+progressFill.BackgroundColor3 = C.accent
+progressFill.BorderSizePixel = 0
+progressFill.Parent = progressBg
 
-local lVwqY2lvkx2oIn = Instance.new("\x55\x49\67\111\x72\x6e\x65\114")
-lVwqY2lvkx2oIn.CornerRadius = UDim.new((bit32.bxor(2069396895,2069396894)), (bit32.bxor(1728726029,1728726029)))
-lVwqY2lvkx2oIn.Parent = j22cN0o8Aykknn
+local fillCorner = Instance.new("UICorner")
+fillCorner.CornerRadius = UDim.new(1, 0)
+fillCorner.Parent = progressFill
 
-local ifrkaNiZqD0plJIZ=(#"\x22\67\119\32\x5c\98")
-local sIjS59UoGJSeYlcgbT=("\x6b".."\120".."\x21".."\63".."\x42")
-local SciibqBbvbs1pwE=("\x6b".."\x57".."\x6c".."\84".."\x6c".."\76".."\55")
-local iIcbiC5ocES9lw=(string.rep("\x4a",4))
-local szz5w1cxi8VWOczd88Vhn=(#{436,137})
-local Bb9k1iIS2gTInquvlglXO = Instance.new("\70\114\x61\x6d\101")
-Bb9k1iIS2gTInquvlglXO.Size = UDim2.new((bit32.bxor(688654156,688654157)), (bit32.bxor(1538421527,1538421527)), (bit32.bxor(1957260872,1957260873)), (bit32.bxor(1332167165,1332167165)))
-Bb9k1iIS2gTInquvlglXO.BackgroundColor3 = tRTUxkezcXiCly5g1Bq.accent
-Bb9k1iIS2gTInquvlglXO.BorderSizePixel = (bit32.bxor(1618472678,1618472678))
-Bb9k1iIS2gTInquvlglXO.Parent = j22cN0o8Aykknn
-
-local kZFzztupkt2c9nZkrl=(#"\x3e\98\103\120\95\113")
-local lEnfesL0y88tr5CX8Rb=(bit32.bxor(bit32.bxor(36307,61287),26694))
-local Cq9EdobbmYSlpcES_hB=(#"\52\75\92\59\42\66\x35\118\x23\x3a")
-local je1fYPOIf9PoN5DDiq1 = Instance.new("\85\x49\67\x6f\114\x6e\101\x72")
-je1fYPOIf9PoN5DDiq1.CornerRadius = UDim.new((bit32.bxor(1691725416,1691725417)), (bit32.bxor(830319267,830319267)))
-je1fYPOIf9PoN5DDiq1.Parent = Bb9k1iIS2gTInquvlglXO
-
-local aYH8lIJPDYnlc2v = Instance.new("\x55\73\71\x72\x61\x64\x69\x65\x6e\116")
-aYH8lIJPDYnlc2v.Color = ColorSequence.new{
- ColorSequenceKeypoint.new((bit32.bxor(1302606055,1302606055)), tRTUxkezcXiCly5g1Bq.accent),
- ColorSequenceKeypoint.new((bit32.bxor(128949450,128949451)), tRTUxkezcXiCly5g1Bq.accent2),
+local fillGradient = Instance.new("UIGradient")
+fillGradient.Color = ColorSequence.new{
+    ColorSequenceKeypoint.new(0, C.accent),
+    ColorSequenceKeypoint.new(1, C.accent2),
 }
-aYH8lIJPDYnlc2v.Parent = Bb9k1iIS2gTInquvlglXO
+fillGradient.Parent = progressFill
 
-local pbq5SXT2v8i_8f2=(#"\x44\66\67\x72\x5d\x2b\x74\x65\x42")
-local aHqnmkYbLIdZTZXTM9RO=((7016>3599) and false or true)
+-- ===== LOG SECTION =====
+local logSep = Instance.new("Frame")
+logSep.Size = UDim2.new(1, -32, 0, 1)
+logSep.Position = UDim2.new(0, 16, 0, 146)
+logSep.BackgroundColor3 = C.accent
+logSep.BackgroundTransparency = 0.8
+logSep.BorderSizePixel = 0
+logSep.Parent = panel
 
-local IYaXyOzdWfOpawvbe = Instance.new("\70\x72\x61\x6d\101")
-IYaXyOzdWfOpawvbe.Size = UDim2.new((bit32.bxor(2119738412,2119738413)), -(bit32.bxor(884230130,884230098)), (bit32.bxor(1317544494,1317544494)), (bit32.bxor(1919162326,1919162327)))
-IYaXyOzdWfOpawvbe.Position = UDim2.new((bit32.bxor(283538930,283538930)), (bit32.bxor(1386587207,1386587223)), (bit32.bxor(2067939008,2067939008)), (bit32.bxor(2103915088,2103915202)))
-IYaXyOzdWfOpawvbe.BackgroundColor3 = tRTUxkezcXiCly5g1Bq.accent
-IYaXyOzdWfOpawvbe.BackgroundTransparency = 0.8
-IYaXyOzdWfOpawvbe.BorderSizePixel = (bit32.bxor(1864623578,1864623578))
-IYaXyOzdWfOpawvbe.Parent = mvdiAPvXB9Gv1IW0fqoH
+local logFrame = Instance.new("Frame")
+logFrame.Size = UDim2.new(1, -32, 0, 78)
+logFrame.Position = UDim2.new(0, 16, 0, 152)
+logFrame.BackgroundTransparency = 1
+logFrame.Parent = panel
 
-local aqnW1BRFai1zwf=(string.rep("\x48",4))
-local ueHF0nSqicEhxZ0=(math.max(693,918))
-local S5bcBYce0lYfEXnZxRi0zu=(bit32.bxor(3702127,7384388))
-local eu0CBW8knseSPCCXz02=(#{845,844})
-local _roJs1PrGUuNpguSguj = Instance.new("\70\x72\x61\x6d\101")
-_roJs1PrGUuNpguSguj.Size = UDim2.new((bit32.bxor(2142834066,2142834067)), -(bit32.bxor(1330838194,1330838162)), (bit32.bxor(591120519,591120519)), (bit32.bxor(1020505180,1020505106)))
-_roJs1PrGUuNpguSguj.Position = UDim2.new((bit32.bxor(2041700284,2041700284)), (bit32.bxor(80899912,80899928)), (bit32.bxor(802177561,802177561)), (bit32.bxor(36933052,36932900)))
-_roJs1PrGUuNpguSguj.BackgroundTransparency = (bit32.bxor(1686706024,1686706025))
-_roJs1PrGUuNpguSguj.Parent = mvdiAPvXB9Gv1IW0fqoH
+local logLabel = Instance.new("TextLabel")
+logLabel.Size = UDim2.new(1, 0, 1, 0)
+logLabel.BackgroundTransparency = 1
+logLabel.Text = "Loading..."
+logLabel.TextColor3 = C.log
+logLabel.TextSize = 11
+logLabel.Font = Enum.Font.Code
+logLabel.TextXAlignment = Enum.TextXAlignment.Left
+logLabel.TextYAlignment = Enum.TextYAlignment.Top
+logLabel.Parent = logFrame
 
-local a2gsBVOrXbcqnlux=(bit32.bxor(9598174,797573))
-local quhqSefurGFwvdUo=(bit32.bxor(bit32.bxor(bit32.bxor(bit32.bxor(59902,13152),54096),21330),11385))
-local hwEObFIIkavMfbTEq=((5139-9940*32)%256)
-local ChDKISW9PXIfI2hk=((2693>6750) and false or true)
-local _ViUz0zl5h5cwzo=(#{751,741,746,994})
-local dWiKWnsicInDW1c = Instance.new("\84\x65\120\116\x4c\x61\98\x65\x6c")
-dWiKWnsicInDW1c.Size = UDim2.new((bit32.bxor(1510456699,1510456698)), (bit32.bxor(913661630,913661630)), (bit32.bxor(55868663,55868662)), (bit32.bxor(1264189365,1264189365)))
-dWiKWnsicInDW1c.BackgroundTransparency = (bit32.bxor(1916728680,1916728681))
-dWiKWnsicInDW1c.Text = "\76\x6f\97\100\105\x6e\103\46\x2e\46"
-dWiKWnsicInDW1c.TextColor3 = tRTUxkezcXiCly5g1Bq.log
-dWiKWnsicInDW1c.TextSize = (bit32.bxor(991099868,991099863))
-dWiKWnsicInDW1c.Font = Enum.Font.Code
-dWiKWnsicInDW1c.TextXAlignment = Enum.TextXAlignment.Left
-dWiKWnsicInDW1c.TextYAlignment = Enum.TextYAlignment.Top
-dWiKWnsicInDW1c.Parent = _roJs1PrGUuNpguSguj
-
-local SpE8Iu5od0INCIoBx0uq9H=((9277*2210*65)%256)
-local gsehciIe0sDkiO=("\34".."\55".."\43".."\x51")
-local SXEiZzne5Z1wcn90lz1xK=(string.rep("\x55",1))
-local eOev1EooOcFuwC5O=(#{590,821})
-
-local O1BiRSYvg_1nboyscn0i8, Cx2Szt0lig1en8H, SnRbqOZnCn021z8Mqv
-n1hCxqNus1Lqhyiii.InputBegan:Connect(function(jOmMlHNWlxn0nyiNpYkl)
- if jOmMlHNWlxn0nyiNpYkl.UserInputType == Enum.UserInputType.MouseButton1
- or jOmMlHNWlxn0nyiNpYkl.UserInputType == Enum.UserInputType.Touch then
- O1BiRSYvg_1nboyscn0i8 = true
- Cx2Szt0lig1en8H = jOmMlHNWlxn0nyiNpYkl.Position
- SnRbqOZnCn021z8Mqv = mvdiAPvXB9Gv1IW0fqoH.Position
- end
+-- ===== DRAG PANEL =====
+local dragging, dragStart, startPos
+header.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = panel.Position
+    end
 end)
-n1hCxqNus1Lqhyiii.InputEnded:Connect(function(jOmMlHNWlxn0nyiNpYkl)
- if jOmMlHNWlxn0nyiNpYkl.UserInputType == Enum.UserInputType.MouseButton1
- or jOmMlHNWlxn0nyiNpYkl.UserInputType == Enum.UserInputType.Touch then
- O1BiRSYvg_1nboyscn0i8 = false
- end
+header.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
+    end
 end)
-UserInputService.InputChanged:Connect(function(jOmMlHNWlxn0nyiNpYkl)
- if O1BiRSYvg_1nboyscn0i8 and (jOmMlHNWlxn0nyiNpYkl.UserInputType == Enum.UserInputType.MouseMovement
- or jOmMlHNWlxn0nyiNpYkl.UserInputType == Enum.UserInputType.Touch) then
- local aanZWUSixp0tol5c0sk0uc = jOmMlHNWlxn0nyiNpYkl.Position - Cx2Szt0lig1en8H
- mvdiAPvXB9Gv1IW0fqoH.Position = UDim2.new(
- SnRbqOZnCn021z8Mqv.X.Scale, SnRbqOZnCn021z8Mqv.X.Offset + aanZWUSixp0tol5c0sk0uc.X,
- SnRbqOZnCn021z8Mqv.Y.Scale, SnRbqOZnCn021z8Mqv.Y.Offset + aanZWUSixp0tol5c0sk0uc.Y
- )
- end
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
+        panel.Position = UDim2.new(
+            startPos.X.Scale, startPos.X.Offset + delta.X,
+            startPos.Y.Scale, startPos.Y.Offset + delta.Y
+        )
+    end
 end)
 
-local hvnnW1a0xaPpROoEmrIV2q=((4593>4927) and false or true)
-local qghvB2bIdSqlf_Lunu5=("\117".."\98".."\x46".."\x2a".."\x27".."\40")
+-- ===== TOGGLE BUTTON =====
+local toggleGui = Instance.new("ScreenGui")
+toggleGui.Name = "CatLazyToggle"
+toggleGui.ResetOnSpawn = false
+toggleGui.IgnoreGuiInset = true
+toggleGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+toggleGui.DisplayOrder = 1000
+toggleGui.Parent = guiParent
 
-local okNxLeMN2ZIbbXItEcC = Instance.new("\x53\99\114\101\x65\x6e\x47\x75\x69")
-okNxLeMN2ZIbbXItEcC.Name = "\67\97\116\x4c\97\x7a\121\x54\111\103\x67\108\x65"
-okNxLeMN2ZIbbXItEcC.ResetOnSpawn = false
-okNxLeMN2ZIbbXItEcC.IgnoreGuiInset = true
-okNxLeMN2ZIbbXItEcC.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-okNxLeMN2ZIbbXItEcC.DisplayOrder = (bit32.bxor(1357471207,1357471247))
-okNxLeMN2ZIbbXItEcC.Parent = dwwO8syTd1SNVcR1YibAS
+local toggleBtn = Instance.new("TextButton")
+toggleBtn.Size = UDim2.new(0, 130, 0, 40)
+toggleBtn.Position = UDim2.new(1, -145, 0, 70)
+toggleBtn.BackgroundColor3 = C.accent
+toggleBtn.BackgroundTransparency = 0.15
+toggleBtn.Text = "CatLazy Tool"
+toggleBtn.TextColor3 = C.text
+toggleBtn.TextSize = 14
+toggleBtn.Font = Enum.Font.GothamBold
+toggleBtn.AutoButtonColor = false
+toggleBtn.Active = true
+toggleBtn.ZIndex = 10
+toggleBtn.Parent = toggleGui
 
-local stCi9fBLB91nShKkk=(string.rep("\x42",1))
-local zvbljB89DB5cYOtvzwX5=((7611>3400) and false or true)
-local uXhUKSbItqqKcJzO=(bit32.bxor(9346998,10281786))
-local rodAYwb0iXSyW9SocW = Instance.new("\84\x65\120\116\66\x75\x74\x74\x6f\x6e")
-rodAYwb0iXSyW9SocW.Size = UDim2.new((bit32.bxor(933103119,933103119)), (bit32.bxor(573087098,573087224)), (bit32.bxor(868224184,868224184)), (bit32.bxor(1882494515,1882494491)))
-rodAYwb0iXSyW9SocW.Position = UDim2.new((bit32.bxor(1970776527,1970776526)), -(bit32.bxor(1096736774,1096736919)), (bit32.bxor(1793621430,1793621430)), (bit32.bxor(1850151204,1850151266)))
-rodAYwb0iXSyW9SocW.BackgroundColor3 = tRTUxkezcXiCly5g1Bq.accent
-rodAYwb0iXSyW9SocW.BackgroundTransparency = 0.15
-rodAYwb0iXSyW9SocW.Text = "\x43\97\116\76\x61\x7a\121\32\84\111\x6f\x6c"
-rodAYwb0iXSyW9SocW.TextColor3 = tRTUxkezcXiCly5g1Bq.text
-rodAYwb0iXSyW9SocW.TextSize = (bit32.bxor(2098306814,2098306800))
-rodAYwb0iXSyW9SocW.Font = Enum.Font.GothamBold
-rodAYwb0iXSyW9SocW.AutoButtonColor = false
-rodAYwb0iXSyW9SocW.Active = true
-rodAYwb0iXSyW9SocW.ZIndex = (bit32.bxor(1083209645,1083209639))
-rodAYwb0iXSyW9SocW.Parent = okNxLeMN2ZIbbXItEcC
+local tCorner = Instance.new("UICorner")
+tCorner.CornerRadius = UDim.new(0, 10)
+tCorner.Parent = toggleBtn
 
-local OBoxFzI1OqjZziZqT=((2593-2229-74)%256)
-local sXKqXmo21vb8HWbug9e=(bit32.bxor(bit32.bxor(38322,57965),47277))
-local uf1T29RpYcCinScM0bLldX=(bit32.bxor(14744230,3459289))
-local IbvKKvl9nATulgI5ufd=(#{901,813,244})
-local Bd0BvcvZqm820kG1kIWdB8 = Instance.new("\85\73\67\111\x72\110\101\114")
-Bd0BvcvZqm820kG1kIWdB8.CornerRadius = UDim.new((bit32.bxor(30626538,30626538)), (bit32.bxor(1819293000,1819292994)))
-Bd0BvcvZqm820kG1kIWdB8.Parent = rodAYwb0iXSyW9SocW
-
-local ZztfaffKOKttKavJ111 = Instance.new("\85\x49\x47\x72\97\100\x69\101\110\x74")
-ZztfaffKOKttKavJ111.Color = ColorSequence.new{
- ColorSequenceKeypoint.new((bit32.bxor(1150021912,1150021912)), tRTUxkezcXiCly5g1Bq.accent),
- ColorSequenceKeypoint.new((bit32.bxor(1200065781,1200065780)), tRTUxkezcXiCly5g1Bq.accent2),
+local tGradient = Instance.new("UIGradient")
+tGradient.Color = ColorSequence.new{
+    ColorSequenceKeypoint.new(0, C.accent),
+    ColorSequenceKeypoint.new(1, C.accent2),
 }
-ZztfaffKOKttKavJ111.Rotation = (bit32.bxor(1044589282,1044589263))
-ZztfaffKOKttKavJ111.Parent = rodAYwb0iXSyW9SocW
+tGradient.Rotation = 45
+tGradient.Parent = toggleBtn
 
-local l8wNgq0iy9TxBOD=(bit32.bxor(bit32.bxor(38748,53857),40756))
-local ycncJz80pNm5cw=(bit32.bxor(bit32.bxor(1416,46896),63927))
-local wD5AJnbglvFhsGfU=((8652*3249+44)%256)
-local n9so1ByhSZkZm1v19 = Instance.new("\85\73\83\116\x72\x6f\107\x65")
-n9so1ByhSZkZm1v19.Color = tRTUxkezcXiCly5g1Bq.text
-n9so1ByhSZkZm1v19.Thickness = 1.5
-n9so1ByhSZkZm1v19.Transparency = 0.7
-n9so1ByhSZkZm1v19.Parent = rodAYwb0iXSyW9SocW
+local tStroke = Instance.new("UIStroke")
+tStroke.Color = C.text
+tStroke.Thickness = 1.5
+tStroke.Transparency = 0.7
+tStroke.Parent = toggleBtn
 
-local eZ0PEkctxqNbMqn09hI=(math.max(998,164))
-local bJrbqzgg5hio9F255Yc=((9302>701) and false or true)
-local yxoCBoK9ck5IXuRIiNigP=((8553>9089) and false or true)
-local wJu8g9NrwS0v9gM=((5978>3480) and false or true)
-local n9Iv9iKP0yCcMVeYl, sFvVqbnC1BihSP, rIfilZssh_ckuJS
-rodAYwb0iXSyW9SocW.InputBegan:Connect(function(jOmMlHNWlxn0nyiNpYkl)
- if jOmMlHNWlxn0nyiNpYkl.UserInputType == Enum.UserInputType.MouseButton1
- or jOmMlHNWlxn0nyiNpYkl.UserInputType == Enum.UserInputType.Touch then
- n9Iv9iKP0yCcMVeYl = false
- sFvVqbnC1BihSP = jOmMlHNWlxn0nyiNpYkl.Position
- rIfilZssh_ckuJS = rodAYwb0iXSyW9SocW.Position
- end
+local bDragging, bStart, bStartPos
+toggleBtn.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+        bDragging = false
+        bStart = input.Position
+        bStartPos = toggleBtn.Position
+    end
 end)
-rodAYwb0iXSyW9SocW.InputEnded:Connect(function(jOmMlHNWlxn0nyiNpYkl)
- if jOmMlHNWlxn0nyiNpYkl.UserInputType == Enum.UserInputType.MouseButton1
- or jOmMlHNWlxn0nyiNpYkl.UserInputType == Enum.UserInputType.Touch then
- if n9Iv9iKP0yCcMVeYl then n9Iv9iKP0yCcMVeYl = false end
- end
+toggleBtn.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+        if bDragging then bDragging = false end
+    end
 end)
-UserInputService.InputChanged:Connect(function(jOmMlHNWlxn0nyiNpYkl)
- if (jOmMlHNWlxn0nyiNpYkl.UserInputType == Enum.UserInputType.MouseMovement
- or jOmMlHNWlxn0nyiNpYkl.UserInputType == Enum.UserInputType.Touch) then
- if sFvVqbnC1BihSP then
- local aanZWUSixp0tol5c0sk0uc = (jOmMlHNWlxn0nyiNpYkl.Position - sFvVqbnC1BihSP).Magnitude
- if aanZWUSixp0tol5c0sk0uc > (bit32.bxor(1364712833,1364712841)) then
- n9Iv9iKP0yCcMVeYl = true
- rodAYwb0iXSyW9SocW.Position = UDim2.new(
- rIfilZssh_ckuJS.X.Scale, rIfilZssh_ckuJS.X.Offset + (jOmMlHNWlxn0nyiNpYkl.Position.X - sFvVqbnC1BihSP.X),
- rIfilZssh_ckuJS.Y.Scale, rIfilZssh_ckuJS.Y.Offset + (jOmMlHNWlxn0nyiNpYkl.Position.Y - sFvVqbnC1BihSP.Y)
- )
- end
- end
- end
+UserInputService.InputChanged:Connect(function(input)
+    if (input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch) then
+        if bStart then
+            local delta = (input.Position - bStart).Magnitude
+            if delta > 8 then
+                bDragging = true
+                toggleBtn.Position = UDim2.new(
+                    bStartPos.X.Scale, bStartPos.X.Offset + (input.Position.X - bStart.X),
+                    bStartPos.Y.Scale, bStartPos.Y.Offset + (input.Position.Y - bStart.Y)
+                )
+            end
+        end
+    end
 end)
 
-local hZ5vcbkDoSOYcOou2wKn9=((7339>5737) and false or true)
-local iBZFP2yYqI5cRlcc0T=(#"\x6d\x22\97\x39")
-local lo1An2qnXMFncOWVe_I0SI=(#{614,488,236,519,215})
-local weZRLwyJozVkqu=((534+8457-32)%256)
-local function mcnsUnBnieSekYfiu()
- local um2TZCLDlfeLe8 = rvpZEBYHsKoynKZh_ and UDim2.new(0.5, -(bit32.bxor(944536987,944536881)), (bit32.bxor(844688482,844688482)), (bit32.bxor(721652430,721652476))) or UDim2.new(0.5, -(bit32.bxor(755113968,755113818)), (bit32.bxor(1345615396,1345615396)), -(bit32.bxor(22081249,22081485)))
- local wgOLBybEnaFFc2 = rvpZEBYHsKoynKZh_ and 0.08 or (bit32.bxor(1885672430,1885672431))
- TweenService:Create(mvdiAPvXB9Gv1IW0fqoH, TweenInfo.new(0.35, Enum.EasingStyle.Quint), {
- Position = um2TZCLDlfeLe8,
- BackgroundTransparency = wgOLBybEnaFFc2,
- }):Play()
- if not rvpZEBYHsKoynKZh_ then
- task.delay(0.4, function()
- mvdiAPvXB9Gv1IW0fqoH.Visible = false
- end)
- else
- mvdiAPvXB9Gv1IW0fqoH.Visible = true
- end
+local function refreshPanelVisibility()
+    local targetPos = guiVisible and UDim2.new(0.5, -170, 0, 50) or UDim2.new(0.5, -170, 0, -300)
+    local targetTrans = guiVisible and 0.08 or 1
+    TweenService:Create(panel, TweenInfo.new(0.35, Enum.EasingStyle.Quint), {
+        Position = targetPos,
+        BackgroundTransparency = targetTrans,
+    }):Play()
+    if not guiVisible then
+        task.delay(0.4, function()
+            panel.Visible = false
+        end)
+    else
+        panel.Visible = true
+    end
 end
 
-rodAYwb0iXSyW9SocW.MouseButton1Click:Connect(function()
- if n9Iv9iKP0yCcMVeYl then return end
- rvpZEBYHsKoynKZh_ = not rvpZEBYHsKoynKZh_
- mvdiAPvXB9Gv1IW0fqoH.Visible = true
- mcnsUnBnieSekYfiu()
+toggleBtn.MouseButton1Click:Connect(function()
+    if bDragging then return end
+    guiVisible = not guiVisible
+    panel.Visible = true
+    refreshPanelVisibility()
 
- if rvpZEBYHsKoynKZh_ then
- ZztfaffKOKttKavJ111.Color = ColorSequence.new{
- ColorSequenceKeypoint.new((bit32.bxor(384499032,384499032)), tRTUxkezcXiCly5g1Bq.accent),
- ColorSequenceKeypoint.new((bit32.bxor(2064754411,2064754410)), tRTUxkezcXiCly5g1Bq.accent2),
- }
- rodAYwb0iXSyW9SocW.Text = "\67\97\x74\76\x61\122\x79\32\x54\x6f\x6f\x6c"
- rodAYwb0iXSyW9SocW.TextColor3 = tRTUxkezcXiCly5g1Bq.text
- else
- ZztfaffKOKttKavJ111.Color = ColorSequence.new{
- ColorSequenceKeypoint.new((bit32.bxor(2093264235,2093264235)), Color3.fromRGB((bit32.bxor(889774841,889774761)),(bit32.bxor(1253348163,1253348115)),(bit32.bxor(1365912519,1365912477)))),
- ColorSequenceKeypoint.new((bit32.bxor(1204390061,1204390060)), Color3.fromRGB((bit32.bxor(1289762982,1289762964)),(bit32.bxor(1616363633,1616363587)),(bit32.bxor(2003220390,2003220378)))),
- }
- rodAYwb0iXSyW9SocW.Text = "\x43\97\116\x4c\97\x7a\x79\32\x54\x6f\111\x6c"
- rodAYwb0iXSyW9SocW.TextColor3 = tRTUxkezcXiCly5g1Bq.textDim
- end
+    if guiVisible then
+        tGradient.Color = ColorSequence.new{
+            ColorSequenceKeypoint.new(0, C.accent),
+            ColorSequenceKeypoint.new(1, C.accent2),
+        }
+        toggleBtn.Text = "CatLazy Tool"
+        toggleBtn.TextColor3 = C.text
+    else
+        tGradient.Color = ColorSequence.new{
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(80,80,90)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(50,50,60)),
+        }
+        toggleBtn.Text = "CatLazy Tool"
+        toggleBtn.TextColor3 = C.textDim
+    end
 end)
 
-local jhNzSzs9tf2Bqb = Instance.new("\84\x65\120\116\66\117\x74\116\x6f\110")
-jhNzSzs9tf2Bqb.Size = UDim2.new((bit32.bxor(1887085102,1887085102)), (bit32.bxor(2004408120,2004408250)), (bit32.bxor(1856540877,1856540877)), (bit32.bxor(796449806,796449808)))
-jhNzSzs9tf2Bqb.Position = UDim2.new((bit32.bxor(2074113854,2074113855)), -(bit32.bxor(2014599578,2014599435)), (bit32.bxor(100632959,100632959)), (bit32.bxor(1102354313,1102354429)))
-jhNzSzs9tf2Bqb.BackgroundColor3 = tRTUxkezcXiCly5g1Bq.bg2
-jhNzSzs9tf2Bqb.BackgroundTransparency = 0.2
-jhNzSzs9tf2Bqb.Text = "\83\101\x74\32\87\101\98\x68\111\111\x6b"
-jhNzSzs9tf2Bqb.TextColor3 = tRTUxkezcXiCly5g1Bq.textDim
-jhNzSzs9tf2Bqb.TextSize = (bit32.bxor(997466830,997466818))
-jhNzSzs9tf2Bqb.Font = Enum.Font.GothamBold
-jhNzSzs9tf2Bqb.AutoButtonColor = false
-jhNzSzs9tf2Bqb.Active = true
-jhNzSzs9tf2Bqb.ZIndex = (bit32.bxor(1011392518,1011392524))
-jhNzSzs9tf2Bqb.Parent = okNxLeMN2ZIbbXItEcC
+-- ===== WEBHOOK BUTTON =====
+local webhookBtn = Instance.new("TextButton")
+webhookBtn.Size = UDim2.new(0, 130, 0, 30)
+webhookBtn.Position = UDim2.new(1, -145, 0, 116)
+webhookBtn.BackgroundColor3 = C.bg2
+webhookBtn.BackgroundTransparency = 0.2
+webhookBtn.Text = "Set Webhook"
+webhookBtn.TextColor3 = C.textDim
+webhookBtn.TextSize = 12
+webhookBtn.Font = Enum.Font.GothamBold
+webhookBtn.AutoButtonColor = false
+webhookBtn.Active = true
+webhookBtn.ZIndex = 10
+webhookBtn.Parent = toggleGui
 
-local sqUzpKugFoill8B8059 = Instance.new("\85\x49\67\x6f\x72\x6e\101\114")
-sqUzpKugFoill8B8059.CornerRadius = UDim.new((bit32.bxor(1332783003,1332783003)), (bit32.bxor(1302865926,1302865934)))
-sqUzpKugFoill8B8059.Parent = jhNzSzs9tf2Bqb
+local wCorner = Instance.new("UICorner")
+wCorner.CornerRadius = UDim.new(0, 8)
+wCorner.Parent = webhookBtn
 
-local SXnpBgNpO2IwqGstIqop8 = Instance.new("\x55\x49\83\116\x72\x6f\107\x65")
-SXnpBgNpO2IwqGstIqop8.Color = tRTUxkezcXiCly5g1Bq.accent
-SXnpBgNpO2IwqGstIqop8.Thickness = (bit32.bxor(1745556563,1745556562))
-SXnpBgNpO2IwqGstIqop8.Transparency = 0.6
-SXnpBgNpO2IwqGstIqop8.Parent = jhNzSzs9tf2Bqb
+local wStroke = Instance.new("UIStroke")
+wStroke.Color = C.accent
+wStroke.Thickness = 1
+wStroke.Transparency = 0.6
+wStroke.Parent = webhookBtn
 
-if m1ojKIzbeZK8MBvPesH ~= "" then
- SXnpBgNpO2IwqGstIqop8.Color = tRTUxkezcXiCly5g1Bq.success
- jhNzSzs9tf2Bqb.Text = "\87\x65\x62\104\111\111\107\x3a\32\79\x4e"
- jhNzSzs9tf2Bqb.TextColor3 = tRTUxkezcXiCly5g1Bq.success
- nXJ5ZVBeIyLhuiqnKJ2C("\87\x65\98\104\x6f\111\107\32\108\x6f\x61\x64\x65\100\x20\116\117\x20\102\105\108\101")
+if webhookUrl ~= "" then
+    wStroke.Color = C.success
+    webhookBtn.Text = "Webhook: ON"
+    webhookBtn.TextColor3 = C.success
+    addLog("Webhook loaded tu file")
 end
 
-local hDrXiK8hhFX2sCYKsi = Instance.new("\83\x63\x72\x65\x65\110\x47\x75\105")
-hDrXiK8hhFX2sCYKsi.Name = "\x43\x61\116\x4c\97\x7a\x79\87\x65\x62\104\x6f\x6f\107"
-hDrXiK8hhFX2sCYKsi.ResetOnSpawn = false
-hDrXiK8hhFX2sCYKsi.IgnoreGuiInset = true
-hDrXiK8hhFX2sCYKsi.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-hDrXiK8hhFX2sCYKsi.DisplayOrder = (bit32.bxor(642817206,642817887))
-hDrXiK8hhFX2sCYKsi.Enabled = false
-hDrXiK8hhFX2sCYKsi.Parent = dwwO8syTd1SNVcR1YibAS
+-- ===== WEBHOOK DIALOG =====
+local webhookGui = Instance.new("ScreenGui")
+webhookGui.Name = "CatLazyWebhook"
+webhookGui.ResetOnSpawn = false
+webhookGui.IgnoreGuiInset = true
+webhookGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+webhookGui.DisplayOrder = 1001
+webhookGui.Enabled = false
+webhookGui.Parent = guiParent
 
-local oxozZFIlmgu2nfIk2i8 = Instance.new("\84\101\x78\116\66\117\116\116\x6f\x6e")
-oxozZFIlmgu2nfIk2i8.Size = UDim2.new((bit32.bxor(716258568,716258569)), (bit32.bxor(1380846564,1380846564)), (bit32.bxor(507508473,507508472)), (bit32.bxor(213467749,213467749)))
-oxozZFIlmgu2nfIk2i8.BackgroundColor3 = Color3.fromRGB((bit32.bxor(1149746677,1149746677)), (bit32.bxor(20595724,20595724)), (bit32.bxor(1267188117,1267188117)))
-oxozZFIlmgu2nfIk2i8.BackgroundTransparency = 0.5
-oxozZFIlmgu2nfIk2i8.Text = ""
-oxozZFIlmgu2nfIk2i8.AutoButtonColor = false
-oxozZFIlmgu2nfIk2i8.BorderSizePixel = (bit32.bxor(1029848236,1029848236))
-oxozZFIlmgu2nfIk2i8.Parent = hDrXiK8hhFX2sCYKsi
+local dialogOverlay = Instance.new("TextButton")
+dialogOverlay.Size = UDim2.new(1, 0, 1, 0)
+dialogOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+dialogOverlay.BackgroundTransparency = 0.5
+dialogOverlay.Text = ""
+dialogOverlay.AutoButtonColor = false
+dialogOverlay.BorderSizePixel = 0
+dialogOverlay.Parent = webhookGui
 
-local v8WMovcOzY0mgHeuEu = Instance.new("\x46\114\x61\x6d\x65")
-v8WMovcOzY0mgHeuEu.Size = UDim2.new((bit32.bxor(1904836010,1904836010)), (bit32.bxor(67818263,67818071)), (bit32.bxor(1066825071,1066825071)), (bit32.bxor(330327440,330327332)))
-v8WMovcOzY0mgHeuEu.Position = UDim2.new(0.5, -(bit32.bxor(1738008211,1738008115)), 0.5, -(bit32.bxor(1091112755,1091112809)))
-v8WMovcOzY0mgHeuEu.BackgroundColor3 = tRTUxkezcXiCly5g1Bq.bg
-v8WMovcOzY0mgHeuEu.BorderSizePixel = (bit32.bxor(1571361170,1571361170))
-v8WMovcOzY0mgHeuEu.Parent = hDrXiK8hhFX2sCYKsi
+local dialog = Instance.new("Frame")
+dialog.Size = UDim2.new(0, 320, 0, 180)
+dialog.Position = UDim2.new(0.5, -160, 0.5, -90)
+dialog.BackgroundColor3 = C.bg
+dialog.BorderSizePixel = 0
+dialog.Parent = webhookGui
 
-local ssoAVc52Uodbnuw = Instance.new("\85\73\x43\x6f\x72\110\x65\114")
-ssoAVc52Uodbnuw.CornerRadius = UDim.new((bit32.bxor(263434738,263434738)), (bit32.bxor(641347690,641347684)))
-ssoAVc52Uodbnuw.Parent = v8WMovcOzY0mgHeuEu
+local dCorner = Instance.new("UICorner")
+dCorner.CornerRadius = UDim.new(0, 14)
+dCorner.Parent = dialog
 
-local OKkn5IXq8lScFlZ = Instance.new("\x55\x49\x47\x72\x61\x64\x69\x65\110\116")
-OKkn5IXq8lScFlZ.Color = ColorSequence.new{
- ColorSequenceKeypoint.new((bit32.bxor(123989785,123989785)), tRTUxkezcXiCly5g1Bq.bg2),
- ColorSequenceKeypoint.new((bit32.bxor(1496093191,1496093190)), tRTUxkezcXiCly5g1Bq.bg),
+local dGradient = Instance.new("UIGradient")
+dGradient.Color = ColorSequence.new{
+    ColorSequenceKeypoint.new(0, C.bg2),
+    ColorSequenceKeypoint.new(1, C.bg),
 }
-OKkn5IXq8lScFlZ.Rotation = (bit32.bxor(273120914,273120789))
-OKkn5IXq8lScFlZ.Parent = v8WMovcOzY0mgHeuEu
+dGradient.Rotation = 135
+dGradient.Parent = dialog
 
-local jti_Hftk5fvRnsjFw = Instance.new("\85\73\83\x74\114\111\x6b\101")
-jti_Hftk5fvRnsjFw.Color = tRTUxkezcXiCly5g1Bq.accent
-jti_Hftk5fvRnsjFw.Thickness = 1.5
-jti_Hftk5fvRnsjFw.Transparency = 0.4
-jti_Hftk5fvRnsjFw.Parent = v8WMovcOzY0mgHeuEu
+local dStroke = Instance.new("UIStroke")
+dStroke.Color = C.accent
+dStroke.Thickness = 1.5
+dStroke.Transparency = 0.4
+dStroke.Parent = dialog
 
-local qZblgfeBoXJAme1VH = Instance.new("\x54\x65\x78\116\76\x61\x62\101\x6c")
-qZblgfeBoXJAme1VH.Size = UDim2.new((bit32.bxor(1059193588,1059193589)), -(bit32.bxor(1184203503,1184203471)), (bit32.bxor(2100074997,2100074997)), (bit32.bxor(1181978901,1181978895)))
-qZblgfeBoXJAme1VH.Position = UDim2.new((bit32.bxor(2023479679,2023479679)), (bit32.bxor(521314075,521314059)), (bit32.bxor(1270748321,1270748321)), (bit32.bxor(2082023528,2082023526)))
-qZblgfeBoXJAme1VH.BackgroundTransparency = (bit32.bxor(999650398,999650399))
-qZblgfeBoXJAme1VH.Text = "\x44\105\115\99\111\114\100\32\x57\101\98\x68\111\111\x6b\x20\85\x52\76"
-qZblgfeBoXJAme1VH.TextColor3 = tRTUxkezcXiCly5g1Bq.text
-qZblgfeBoXJAme1VH.TextSize = (bit32.bxor(130448937,130448934))
-qZblgfeBoXJAme1VH.Font = Enum.Font.GothamBold
-qZblgfeBoXJAme1VH.TextXAlignment = Enum.TextXAlignment.Left
-qZblgfeBoXJAme1VH.Parent = v8WMovcOzY0mgHeuEu
+local dTitle = Instance.new("TextLabel")
+dTitle.Size = UDim2.new(1, -32, 0, 26)
+dTitle.Position = UDim2.new(0, 16, 0, 14)
+dTitle.BackgroundTransparency = 1
+dTitle.Text = "Discord Webhook URL"
+dTitle.TextColor3 = C.text
+dTitle.TextSize = 15
+dTitle.Font = Enum.Font.GothamBold
+dTitle.TextXAlignment = Enum.TextXAlignment.Left
+dTitle.Parent = dialog
 
-local bTgKToie0nFzHEtvScA = Instance.new("\84\x65\120\x74\x4c\97\98\x65\x6c")
-bTgKToie0nFzHEtvScA.Size = UDim2.new((bit32.bxor(267067299,267067298)), -(bit32.bxor(489765151,489765183)), (bit32.bxor(523228248,523228248)), (bit32.bxor(1863874790,1863874792)))
-bTgKToie0nFzHEtvScA.Position = UDim2.new((bit32.bxor(1076026071,1076026071)), (bit32.bxor(444055122,444055106)), (bit32.bxor(1798148442,1798148442)), (bit32.bxor(602846717,602846677)))
-bTgKToie0nFzHEtvScA.BackgroundTransparency = (bit32.bxor(391165645,391165644))
-bTgKToie0nFzHEtvScA.Text = "\x50\97\x73\x74\x65\x20\119\x65\x62\x68\x6f\111\107\x20\x55\x52\x4c\32\40\x6c\117\117\x20\x74\x75\32\x64\111\x6e\103\32\x76\x61\x6f\32\102\x69\x6c\x65\x29"
-bTgKToie0nFzHEtvScA.TextColor3 = tRTUxkezcXiCly5g1Bq.textDim
-bTgKToie0nFzHEtvScA.TextSize = (bit32.bxor(473238099,473238105))
-bTgKToie0nFzHEtvScA.Font = Enum.Font.Gotham
-bTgKToie0nFzHEtvScA.TextXAlignment = Enum.TextXAlignment.Left
-bTgKToie0nFzHEtvScA.Parent = v8WMovcOzY0mgHeuEu
+local dHint = Instance.new("TextLabel")
+dHint.Size = UDim2.new(1, -32, 0, 14)
+dHint.Position = UDim2.new(0, 16, 0, 40)
+dHint.BackgroundTransparency = 1
+dHint.Text = "Paste webhook URL (luu tu dong vao file)"
+dHint.TextColor3 = C.textDim
+dHint.TextSize = 10
+dHint.Font = Enum.Font.Gotham
+dHint.TextXAlignment = Enum.TextXAlignment.Left
+dHint.Parent = dialog
 
-local uGCBildnevOsqNqo = Instance.new("\x54\101\x78\116\66\111\x78")
-uGCBildnevOsqNqo.Size = UDim2.new((bit32.bxor(696651692,696651693)), -(bit32.bxor(736605559,736605527)), (bit32.bxor(578422073,578422073)), (bit32.bxor(1359585982,1359585948)))
-uGCBildnevOsqNqo.Position = UDim2.new((bit32.bxor(2076707867,2076707867)), (bit32.bxor(23587834,23587818)), (bit32.bxor(1622134945,1622134945)), (bit32.bxor(1646666118,1646666170)))
-uGCBildnevOsqNqo.BackgroundColor3 = tRTUxkezcXiCly5g1Bq.bg2
-uGCBildnevOsqNqo.BackgroundTransparency = 0.2
-uGCBildnevOsqNqo.Text = ""
-uGCBildnevOsqNqo.PlaceholderText = "\104\x74\x74\x70\115\58\47\x2f\x64\x69\x73\x63\x6f\114\100\46\x63\111\109\x2f\97\x70\105\x2f\119\101\x62\104\111\111\x6b\x73\47\46\46\46"
-uGCBildnevOsqNqo.TextColor3 = tRTUxkezcXiCly5g1Bq.text
-uGCBildnevOsqNqo.PlaceholderColor3 = tRTUxkezcXiCly5g1Bq.textDim
-uGCBildnevOsqNqo.TextSize = (bit32.bxor(1328002381,1328002374))
-uGCBildnevOsqNqo.Font = Enum.Font.Code
-uGCBildnevOsqNqo.TextXAlignment = Enum.TextXAlignment.Left
-uGCBildnevOsqNqo.ClearTextOnFocus = false
-uGCBildnevOsqNqo.Parent = v8WMovcOzY0mgHeuEu
+local dInput = Instance.new("TextBox")
+dInput.Size = UDim2.new(1, -32, 0, 34)
+dInput.Position = UDim2.new(0, 16, 0, 60)
+dInput.BackgroundColor3 = C.bg2
+dInput.BackgroundTransparency = 0.2
+dInput.Text = ""
+dInput.PlaceholderText = "https://discord.com/api/webhooks/..."
+dInput.TextColor3 = C.text
+dInput.PlaceholderColor3 = C.textDim
+dInput.TextSize = 11
+dInput.Font = Enum.Font.Code
+dInput.TextXAlignment = Enum.TextXAlignment.Left
+dInput.ClearTextOnFocus = false
+dInput.Parent = dialog
 
-local xqmM1SZOg5jX8iOY = Instance.new("\85\x49\x50\97\100\x64\x69\110\x67")
-xqmM1SZOg5jX8iOY.PaddingLeft = UDim.new((bit32.bxor(441738663,441738663)), (bit32.bxor(945906230,945906238)))
-xqmM1SZOg5jX8iOY.PaddingRight = UDim.new((bit32.bxor(1856184415,1856184415)), (bit32.bxor(146160718,146160710)))
-xqmM1SZOg5jX8iOY.Parent = uGCBildnevOsqNqo
+local inputPad = Instance.new("UIPadding")
+inputPad.PaddingLeft = UDim.new(0, 8)
+inputPad.PaddingRight = UDim.new(0, 8)
+inputPad.Parent = dInput
 
-local g2cuhchiWumtMK = Instance.new("\85\x49\x43\x6f\114\110\x65\114")
-g2cuhchiWumtMK.CornerRadius = UDim.new((bit32.bxor(492071876,492071876)), (bit32.bxor(760337888,760337896)))
-g2cuhchiWumtMK.Parent = uGCBildnevOsqNqo
+local dInputCorner = Instance.new("UICorner")
+dInputCorner.CornerRadius = UDim.new(0, 8)
+dInputCorner.Parent = dInput
 
-local v5ZzovlcMqCbVehWT2 = Instance.new("\84\x65\120\116\x42\x75\x74\116\111\110")
-v5ZzovlcMqCbVehWT2.Size = UDim2.new((bit32.bxor(2072340737,2072340737)), (bit32.bxor(488844797,488844711)), (bit32.bxor(1403034026,1403034026)), (bit32.bxor(2146950838,2146950826)))
-v5ZzovlcMqCbVehWT2.Position = UDim2.new((bit32.bxor(1013606087,1013606087)), (bit32.bxor(386545024,386545040)), (bit32.bxor(719181206,719181207)), -(bit32.bxor(1256408022,1256408060)))
-v5ZzovlcMqCbVehWT2.BackgroundColor3 = Color3.fromRGB((bit32.bxor(1976002649,1976002661)), (bit32.bxor(557783875,557783847)), (bit32.bxor(120212584,120212680)))
-v5ZzovlcMqCbVehWT2.Text = "\84\101\115\x74"
-v5ZzovlcMqCbVehWT2.TextColor3 = tRTUxkezcXiCly5g1Bq.text
-v5ZzovlcMqCbVehWT2.TextSize = (bit32.bxor(478981853,478981841))
-v5ZzovlcMqCbVehWT2.Font = Enum.Font.GothamBold
-v5ZzovlcMqCbVehWT2.BorderSizePixel = (bit32.bxor(1918910088,1918910088))
-v5ZzovlcMqCbVehWT2.Parent = v8WMovcOzY0mgHeuEu
+local dTestBtn = Instance.new("TextButton")
+dTestBtn.Size = UDim2.new(0, 90, 0, 28)
+dTestBtn.Position = UDim2.new(0, 16, 1, -42)
+dTestBtn.BackgroundColor3 = Color3.fromRGB(60, 100, 160)
+dTestBtn.Text = "Test"
+dTestBtn.TextColor3 = C.text
+dTestBtn.TextSize = 12
+dTestBtn.Font = Enum.Font.GothamBold
+dTestBtn.BorderSizePixel = 0
+dTestBtn.Parent = dialog
 
-local sWVkngGchnjL1vbT = Instance.new("\x55\73\67\111\114\110\x65\x72")
-sWVkngGchnjL1vbT.CornerRadius = UDim.new((bit32.bxor(165341066,165341066)), (bit32.bxor(1352931680,1352931686)))
-sWVkngGchnjL1vbT.Parent = v5ZzovlcMqCbVehWT2
+local tBtnCorner = Instance.new("UICorner")
+tBtnCorner.CornerRadius = UDim.new(0, 6)
+tBtnCorner.Parent = dTestBtn
 
-local CvzEeqfw8q1Nk2DfRkoe = Instance.new("\x54\101\120\116\66\x75\x74\116\x6f\x6e")
-CvzEeqfw8q1Nk2DfRkoe.Size = UDim2.new((bit32.bxor(808812586,808812586)), (bit32.bxor(1627047470,1627047540)), (bit32.bxor(209337121,209337121)), (bit32.bxor(1417298808,1417298788)))
-CvzEeqfw8q1Nk2DfRkoe.Position = UDim2.new((bit32.bxor(1583285512,1583285513)), -(bit32.bxor(1124379708,1124379890)), (bit32.bxor(1187330995,1187330994)), -(bit32.bxor(160397512,160397538)))
-CvzEeqfw8q1Nk2DfRkoe.BackgroundColor3 = tRTUxkezcXiCly5g1Bq.accent
-CvzEeqfw8q1Nk2DfRkoe.Text = "\83\97\x76\x65"
-CvzEeqfw8q1Nk2DfRkoe.TextColor3 = tRTUxkezcXiCly5g1Bq.text
-CvzEeqfw8q1Nk2DfRkoe.TextSize = (bit32.bxor(431431102,431431090))
-CvzEeqfw8q1Nk2DfRkoe.Font = Enum.Font.GothamBold
-CvzEeqfw8q1Nk2DfRkoe.BorderSizePixel = (bit32.bxor(477970394,477970394))
-CvzEeqfw8q1Nk2DfRkoe.Parent = v8WMovcOzY0mgHeuEu
+local dSaveBtn = Instance.new("TextButton")
+dSaveBtn.Size = UDim2.new(0, 90, 0, 28)
+dSaveBtn.Position = UDim2.new(1, -206, 1, -42)
+dSaveBtn.BackgroundColor3 = C.accent
+dSaveBtn.Text = "Save"
+dSaveBtn.TextColor3 = C.text
+dSaveBtn.TextSize = 12
+dSaveBtn.Font = Enum.Font.GothamBold
+dSaveBtn.BorderSizePixel = 0
+dSaveBtn.Parent = dialog
 
-local Z5uiCCcDJyn2Vde5 = Instance.new("\85\x49\x43\111\114\x6e\x65\114")
-Z5uiCCcDJyn2Vde5.CornerRadius = UDim.new((bit32.bxor(1813749783,1813749783)), (bit32.bxor(1848725414,1848725408)))
-Z5uiCCcDJyn2Vde5.Parent = CvzEeqfw8q1Nk2DfRkoe
+local sBtnCorner = Instance.new("UICorner")
+sBtnCorner.CornerRadius = UDim.new(0, 6)
+sBtnCorner.Parent = dSaveBtn
 
-local wck9FgghEbmg8n2oE5KqSG = Instance.new("\84\101\x78\116\x42\x75\116\x74\x6f\110")
-wck9FgghEbmg8n2oE5KqSG.Size = UDim2.new((bit32.bxor(1082391337,1082391337)), (bit32.bxor(102652033,102652123)), (bit32.bxor(1200982340,1200982340)), (bit32.bxor(1158185233,1158185229)))
-wck9FgghEbmg8n2oE5KqSG.Position = UDim2.new((bit32.bxor(1143587613,1143587612)), -(bit32.bxor(1721805856,1721805898)), (bit32.bxor(750804410,750804411)), -(bit32.bxor(1300533816,1300533778)))
-wck9FgghEbmg8n2oE5KqSG.BackgroundColor3 = tRTUxkezcXiCly5g1Bq.bg2
-wck9FgghEbmg8n2oE5KqSG.Text = "\x43\97\110\x63\101\x6c"
-wck9FgghEbmg8n2oE5KqSG.TextColor3 = tRTUxkezcXiCly5g1Bq.textDim
-wck9FgghEbmg8n2oE5KqSG.TextSize = (bit32.bxor(1286531103,1286531091))
-wck9FgghEbmg8n2oE5KqSG.Font = Enum.Font.GothamBold
-wck9FgghEbmg8n2oE5KqSG.BorderSizePixel = (bit32.bxor(781730747,781730747))
-wck9FgghEbmg8n2oE5KqSG.Parent = v8WMovcOzY0mgHeuEu
+local dCancelBtn = Instance.new("TextButton")
+dCancelBtn.Size = UDim2.new(0, 90, 0, 28)
+dCancelBtn.Position = UDim2.new(1, -106, 1, -42)
+dCancelBtn.BackgroundColor3 = C.bg2
+dCancelBtn.Text = "Cancel"
+dCancelBtn.TextColor3 = C.textDim
+dCancelBtn.TextSize = 12
+dCancelBtn.Font = Enum.Font.GothamBold
+dCancelBtn.BorderSizePixel = 0
+dCancelBtn.Parent = dialog
 
-local ZNKLZeqh2blbrMIEt = Instance.new("\85\73\67\111\114\x6e\x65\114")
-ZNKLZeqh2blbrMIEt.CornerRadius = UDim.new((bit32.bxor(840662553,840662553)), (bit32.bxor(131427660,131427658)))
-ZNKLZeqh2blbrMIEt.Parent = wck9FgghEbmg8n2oE5KqSG
+local cBtnCorner = Instance.new("UICorner")
+cBtnCorner.CornerRadius = UDim.new(0, 6)
+cBtnCorner.Parent = dCancelBtn
 
-jhNzSzs9tf2Bqb.MouseButton1Click:Connect(function()
- uGCBildnevOsqNqo.Text = m1ojKIzbeZK8MBvPesH
- hDrXiK8hhFX2sCYKsi.Enabled = true
+webhookBtn.MouseButton1Click:Connect(function()
+    dInput.Text = webhookUrl
+    webhookGui.Enabled = true
 end)
 
-oxozZFIlmgu2nfIk2i8.MouseButton1Click:Connect(function()
- hDrXiK8hhFX2sCYKsi.Enabled = false
+dialogOverlay.MouseButton1Click:Connect(function()
+    webhookGui.Enabled = false
 end)
 
-wck9FgghEbmg8n2oE5KqSG.MouseButton1Click:Connect(function()
- hDrXiK8hhFX2sCYKsi.Enabled = false
+dCancelBtn.MouseButton1Click:Connect(function()
+    webhookGui.Enabled = false
 end)
 
-CvzEeqfw8q1Nk2DfRkoe.MouseButton1Click:Connect(function()
- local ansqkq95ko081NOzcr = uGCBildnevOsqNqo.Text
- if ansqkq95ko081NOzcr ~= "" and not ansqkq95ko081NOzcr:match("\x5e\104\116\116\112\115\x3a\47\47\x64\x69\x73\99\x6f\114\x64") then
- nXJ5ZVBeIyLhuiqnKJ2C("\73\x6e\x76\97\x6c\x69\100\x20\x77\101\x62\x68\x6f\111\x6b\32\85\x52\x4c")
- return
- end
- m1ojKIzbeZK8MBvPesH = ansqkq95ko081NOzcr
- CncR2iZFiTgIiqcOWulXqS(ansqkq95ko081NOzcr)
- if ansqkq95ko081NOzcr ~= "" then
- SXnpBgNpO2IwqGstIqop8.Color = tRTUxkezcXiCly5g1Bq.success
- jhNzSzs9tf2Bqb.Text = "\87\x65\x62\104\111\111\107\58\32\79\x4e"
- jhNzSzs9tf2Bqb.TextColor3 = tRTUxkezcXiCly5g1Bq.success
- nXJ5ZVBeIyLhuiqnKJ2C("\87\101\x62\104\x6f\111\107\32\115\97\118\101\x64\32\x2b\x20\x6c\117\117\32\x66\x69\x6c\101")
- else
- SXnpBgNpO2IwqGstIqop8.Color = tRTUxkezcXiCly5g1Bq.accent
- jhNzSzs9tf2Bqb.Text = "\83\x65\x74\x20\x57\x65\98\x68\x6f\111\107"
- jhNzSzs9tf2Bqb.TextColor3 = tRTUxkezcXiCly5g1Bq.textDim
- nXJ5ZVBeIyLhuiqnKJ2C("\87\101\98\x68\x6f\x6f\x6b\x20\99\x6c\101\x61\114\x65\100")
- end
- hDrXiK8hhFX2sCYKsi.Enabled = false
+dSaveBtn.MouseButton1Click:Connect(function()
+    local url = dInput.Text
+    if url ~= "" and not url:match("^https://discord") then
+        addLog("Invalid webhook URL")
+        return
+    end
+    webhookUrl = url
+    saveWebhook(url)
+    if url ~= "" then
+        wStroke.Color = C.success
+        webhookBtn.Text = "Webhook: ON"
+        webhookBtn.TextColor3 = C.success
+        addLog("Webhook saved + luu file")
+    else
+        wStroke.Color = C.accent
+        webhookBtn.Text = "Set Webhook"
+        webhookBtn.TextColor3 = C.textDim
+        addLog("Webhook cleared")
+    end
+    webhookGui.Enabled = false
 end)
 
-v5ZzovlcMqCbVehWT2.MouseButton1Click:Connect(function()
- local sO2sgoycYpqr1IioBK1gy = m1ojKIzbeZK8MBvPesH
- m1ojKIzbeZK8MBvPesH = uGCBildnevOsqNqo.Text
- if m1ojKIzbeZK8MBvPesH == "" then
- m1ojKIzbeZK8MBvPesH = sO2sgoycYpqr1IioBK1gy
- nXJ5ZVBeIyLhuiqnKJ2C("\x4e\111\32\85\x52\x4c\x20\x74\x6f\32\x74\101\115\x74")
- return
- end
- uuifqh0EWfzY0nElnbocb(
- "\84\101\x73\116\x20\87\x65\x62\x68\111\111\107",
- "\42\42\x43\97\x6e\x64\121\x20\x63\x6f\x6c\108\x65\99\x74\x65\x64\58\42\x2a\32" .. lN5qM28uW8Rlss8xbbX ..
- "\10\42\42\x44\x6f\111\114\x73\32\107\x6e\x6f\99\107\x65\100\x3a\42\x2a\x20" .. su0IXeIt1Sncb21CVind ..
- "\x0a\x2a\x2a\76\x61\x73\116\x20\100\111\111\114\32\99\97\x6e\100\x79\x3a\42\x2a\x20" .. ohwJcAnbqSIzlIZboiJ ..
- "\10\42\x2a\x53\x65\115\115\x69\111\x6e\58\42\x2a\32" .. nWePttRfiCsgyf(tick() - ovlvSZnn0BnGnqsW2),
- 0x50dc8c
- )
- m1ojKIzbeZK8MBvPesH = sO2sgoycYpqr1IioBK1gy
- nXJ5ZVBeIyLhuiqnKJ2C("\84\101\x73\x74\32\115\101\110\x74")
+dTestBtn.MouseButton1Click:Connect(function()
+    local old = webhookUrl
+    webhookUrl = dInput.Text
+    if webhookUrl == "" then
+        webhookUrl = old
+        addLog("No URL to test")
+        return
+    end
+    sendWebhook(
+        "Test Webhook",
+        "**Candy collected:** " .. candyCollected ..
+        "\n**Doors knocked:** " .. doorsKnocked ..
+        "\n**Last door candy:** " .. lastDoorCandy ..
+        "\n**Session:** " .. formatTime(tick() - hopStart),
+        0x50dc8c
+    )
+    webhookUrl = old
+    addLog("Test sent")
 end)
 
-local function qCykgygSx0ST8gi0()
- local vHJI_cqWNel211PKO0vll = hIOBW9bZbqO1BJUqnhbx_c - (tick() - ovlvSZnn0BnGnqsW2)
- local _xIOtBqjXHFNqT = math.clamp(vHJI_cqWNel211PKO0vll / hIOBW9bZbqO1BJUqnhbx_c, (bit32.bxor(465987297,465987297)), (bit32.bxor(1025951266,1025951267)))
+-- ===== STATUS REFRESH =====
+local function refreshStatus()
+    local remaining = HOP_INTERVAL - (tick() - hopStart)
+    local pct = math.clamp(remaining / HOP_INTERVAL, 0, 1)
 
- sxIct_KddUtWnWibs2y9T.Text = Iddnbw2biywiVXCv
- hlliX_gRiOVYTAZ.Text = nWePttRfiCsgyf(vHJI_cqWNel211PKO0vll)
- Bb9k1iIS2gTInquvlglXO.Size = UDim2.new(_xIOtBqjXHFNqT, (bit32.bxor(1917301720,1917301720)), (bit32.bxor(1785021673,1785021672)), (bit32.bxor(1501724073,1501724073)))
- Bb9k1iIS2gTInquvlglXO.BackgroundColor3 = _xIOtBqjXHFNqT < 0.1 and tRTUxkezcXiCly5g1Bq.danger or tRTUxkezcXiCly5g1Bq.accent
+    statusText.Text = currentAction
+    progressTime.Text = formatTime(remaining)
+    progressFill.Size = UDim2.new(pct, 0, 1, 0)
+    progressFill.BackgroundColor3 = pct < 0.1 and C.danger or C.accent
 
- local _N8eIWNbY9h9gncjZhDTK2 = "\67\97\110\100\121\x3a\x20" .. lN5qM28uW8Rlss8xbbX
- if su0IXeIt1Sncb21CVind > (bit32.bxor(1952559388,1952559388)) then
- _N8eIWNbY9h9gncjZhDTK2 = _N8eIWNbY9h9gncjZhDTK2 .. "\x20\x28\43" .. ohwJcAnbqSIzlIZboiJ .. "\x29"
- end
- sFl_LoINa9TZTuEwKbP.Text = _N8eIWNbY9h9gncjZhDTK2 .. "\32\32\x20\x7c\32\32\x20\68\111\111\x72\x73\58\x20" .. su0IXeIt1Sncb21CVind
+    local candyPart = "Candy: " .. candyCollected
+    if doorsKnocked > 0 then
+        candyPart = candyPart .. " (+" .. lastDoorCandy .. ")"
+    end
+    statLabel.Text = candyPart .. "   |   Doors: " .. doorsKnocked
 
- local ebgoDibitGTgMoAIoeCmD = #jhtBKcKvqCjqnZhvoKI_99 > (bit32.bxor(660996574,660996574)) and table.concat(jhtBKcKvqCjqnZhvoKI_99, "\x0a") or "\x28\x6e\x6f\x20\x6c\111\103\x20\x79\101\x74\x29"
- dWiKWnsicInDW1c.Text = ebgoDibitGTgMoAIoeCmD
+    local logText = #logLines > 0 and table.concat(logLines, "\n") or "(no log yet)"
+    logLabel.Text = logText
 
- if Iddnbw2biywiVXCv:find("\x48\x6f\112\x70\105\110\103") or Iddnbw2biywiVXCv:find("\100\x65\x61\x64") then
- wOSoCCzT0zmIqixhIOq.BackgroundColor3 = tRTUxkezcXiCly5g1Bq.danger
- inkec9BOTXqe2qyg8wioE.Color = tRTUxkezcXiCly5g1Bq.danger
- elseif Iddnbw2biywiVXCv:find("\87\x61\105\116\105\110\103") then
- wOSoCCzT0zmIqixhIOq.BackgroundColor3 = Color3.fromRGB((bit32.bxor(1400508072,1400507991)), (bit32.bxor(1723412777,1723412961)), (bit32.bxor(121107684,121107636)))
- inkec9BOTXqe2qyg8wioE.Color = Color3.fromRGB((bit32.bxor(1831330233,1831330118)), (bit32.bxor(161769767,161769967)), (bit32.bxor(345500965,345501045)))
- else
- wOSoCCzT0zmIqixhIOq.BackgroundColor3 = tRTUxkezcXiCly5g1Bq.success
- inkec9BOTXqe2qyg8wioE.Color = tRTUxkezcXiCly5g1Bq.success
- end
+    if currentAction:find("Hopping") or currentAction:find("dead") then
+        statusDot.BackgroundColor3 = C.danger
+        dotPulse.Color = C.danger
+    elseif currentAction:find("Waiting") then
+        statusDot.BackgroundColor3 = Color3.fromRGB(255, 200, 80)
+        dotPulse.Color = Color3.fromRGB(255, 200, 80)
+    else
+        statusDot.BackgroundColor3 = C.success
+        dotPulse.Color = C.success
+    end
 end
 
-TweenService:Create(mvdiAPvXB9Gv1IW0fqoH, TweenInfo.new(0.4, Enum.EasingStyle.Back), {
- Position = UDim2.new(0.5, -(bit32.bxor(1386025009,1386025115)), (bit32.bxor(1727375098,1727375098)), (bit32.bxor(378254778,378254728))),
+TweenService:Create(panel, TweenInfo.new(0.4, Enum.EasingStyle.Back), {
+    Position = UDim2.new(0.5, -170, 0, 50),
 }):Play()
 
-game:GetService("\82\117\110\x53\x65\x72\118\x69\99\x65").RenderStepped:Connect(qCykgygSx0ST8gi0)
+game:GetService("RunService").RenderStepped:Connect(refreshStatus)
 
-local function CZBIUiXhIU9SlC1rnk8XT(message)
- Iddnbw2biywiVXCv = message
+local function setStatus(message)
+    currentAction = message
 end
 
-local function ulx2YlTIOtplYkhMiuLqzo(reason)
- CZBIUiXhIU9SlC1rnk8XT("\x48\111\112\112\x69\x6e\103\32\115\101\x72\x76\x65\114\x2e\46\x2e")
- nXJ5ZVBeIyLhuiqnKJ2C("\x48\111\x70\x3a\32" .. (reason or "\x6d\97\x6e\117\97\108"))
+-- ===== HOP =====
+local function hopServer(reason)
+    setStatus("Hopping server...")
+    addLog("Hop: " .. (reason or "manual"))
 
- if m1ojKIzbeZK8MBvPesH ~= "" then
- uuifqh0EWfzY0nElnbocb(
- "\83\101\x72\118\x65\114\32\x48\x6f\x70",
- "\x2a\42\82\x65\97\x73\x6f\x6e\58\x2a\x2a\32" .. (reason or "\109\97\x6e\117\x61\x6c") ..
- "\10\42\42\x43\97\110\100\x79\32\99\x6f\108\108\101\99\x74\x65\100\x3a\42\42\x20" .. lN5qM28uW8Rlss8xbbX ..
- "\10\x2a\42\68\x6f\x6f\114\x73\x20\x6b\x6e\111\x63\107\x65\x64\x3a\42\x2a\32" .. su0IXeIt1Sncb21CVind ..
- "\10\42\x2a\76\x61\x73\x74\x20\x64\111\111\x72\32\x63\x61\x6e\100\x79\x3a\42\x2a\x20" .. ohwJcAnbqSIzlIZboiJ ..
- "\10\x2a\42\x53\101\x73\115\105\x6f\x6e\32\x74\x69\x6d\101\58\x2a\42\32" .. nWePttRfiCsgyf(tick() - ovlvSZnn0BnGnqsW2),
- 0x78c8ff
- )
- end
+    if webhookUrl ~= "" then
+        sendWebhook(
+            "Server Hop",
+            "**Reason:** " .. (reason or "manual") ..
+            "\n**Candy collected:** " .. candyCollected ..
+            "\n**Doors knocked:** " .. doorsKnocked ..
+            "\n**Last door candy:** " .. lastDoorCandy ..
+            "\n**Session time:** " .. formatTime(tick() - hopStart),
+            0x78c8ff
+        )
+    end
 
- if queue_on_teleport then
- queue_on_teleport([[
- loadstring(game:HttpGet("]] .. ZWkZ8SE8bItH1R .. [[", true))()
- ]])
- end
+    if queue_on_teleport then
+        queue_on_teleport([[
+            loadstring(game:HttpGet("]] .. SCRIPT_URL .. [[", true))()
+        ]])
+    end
 
- local kY9eYnygLLMIq8rD, bnYXzh2WCCl9mdqiT9bo = pcall(function()
- return HttpService:JSONDecode(
- game:HttpGet(
- "\104\x74\x74\x70\115\58\x2f\47\x67\x61\x6d\101\x73\46\x72\111\98\x6c\x6f\x78\46\99\x6f\109\x2f\x76\x31\47\103\97\x6d\101\x73\x2f"
- .. game.PlaceId
- .. "\x2f\x73\101\x72\x76\x65\x72\x73\47\x50\117\x62\108\x69\99\x3f\x73\x6f\114\x74\x4f\114\x64\101\x72\61\x41\x73\x63\x26\108\105\x6d\x69\116\x3d\49\x30\48"
- )
- )
- end)
+    local ok, servers = pcall(function()
+        return HttpService:JSONDecode(
+            game:HttpGet(
+                "https://games.roblox.com/v1/games/"
+                .. game.PlaceId
+                .. "/servers/Public?sortOrder=Asc&limit=100"
+            )
+        )
+    end)
 
- if kY9eYnygLLMIq8rD and bnYXzh2WCCl9mdqiT9bo and bnYXzh2WCCl9mdqiT9bo.data then
- local fmou0Xn_lX5BbiMl = (bit32.bxor(1049568488,1049568488))
- for wgmbTcoOGO8CDvI9Yht in ipairs(bnYXzh2WCCl9mdqiT9bo.data) do fmou0Xn_lX5BbiMl = fmou0Xn_lX5BbiMl + (bit32.bxor(1039034415,1039034414)) end
- nXJ5ZVBeIyLhuiqnKJ2C("\70\x6f\117\110\x64\32" .. fmou0Xn_lX5BbiMl .. "\32\x73\101\x72\118\101\114\x73")
+    if ok and servers and servers.data then
+        local total = 0
+        for _ in ipairs(servers.data) do total = total + 1 end
+        addLog("Found " .. total .. " servers")
 
- for wgmbTcoOGO8CDvI9Yht, hYzWq1zaxsq1vpWz2lw in ipairs(bnYXzh2WCCl9mdqiT9bo.data) do
- if hYzWq1zaxsq1vpWz2lw.playing < hYzWq1zaxsq1vpWz2lw.maxPlayers and hYzWq1zaxsq1vpWz2lw.id ~= game.JobId then
- nXJ5ZVBeIyLhuiqnKJ2C(hYzWq1zaxsq1vpWz2lw.playing .. "\47" .. hYzWq1zaxsq1vpWz2lw.maxPlayers .. "\x20\45\62\x20\116\x65\108\101\112\x6f\x72\x74")
- pcall(function()
- BwRvusSCY1gMbdPXTD5cB:TeleportToPlaceInstance(game.PlaceId, hYzWq1zaxsq1vpWz2lw.id, fgVXlOSo2nuknDCiu8I)
- end)
- return
- end
- end
- nXJ5ZVBeIyLhuiqnKJ2C("\x41\108\x6c\32\102\117\108\x6c\32\x2d\x20\114\101\x6a\111\x69\110")
- else
- nXJ5ZVBeIyLhuiqnKJ2C("\x46\101\116\x63\x68\x20\102\97\105\x6c\x65\x64\x20\45\32\x72\101\x6a\111\x69\x6e")
- end
+        for _, s in ipairs(servers.data) do
+            if s.playing < s.maxPlayers and s.id ~= game.JobId then
+                addLog(s.playing .. "/" .. s.maxPlayers .. " -> teleport")
+                pcall(function()
+                    TeleportService:TeleportToPlaceInstance(game.PlaceId, s.id, player)
+                end)
+                return
+            end
+        end
+        addLog("All full - rejoin")
+    else
+        addLog("Fetch failed - rejoin")
+    end
 
- pcall(function()
- BwRvusSCY1gMbdPXTD5cB:Teleport(game.PlaceId, fgVXlOSo2nuknDCiu8I)
- end)
+    pcall(function()
+        TeleportService:Teleport(game.PlaceId, player)
+    end)
 end
 
-local function IPvhcB98ljskTTeiTZjKYX(ycELSlnfTethSi1)
- return ycELSlnfTethSi1:FindFirstChild("\82\x6f\x6f\x74\65\x6e\x63\x68\111\114") or
- ycELSlnfTethSi1:FindFirstChild("\78\x6f\x52\x6f\x74\97\116\x65")
+local function isBusy(character)
+    return character:FindFirstChild("RootAnchor") or
+        character:FindFirstChild("NoRotate")
 end
 
-local function pvKnZniqy8YxEVC(d5X1ieoOOfanvSYbu)
- local lL5yxo0lD0Sqlo8ynvT
- local retLfx5Fh1sASplK8
- local eVWSoY8xw9wzpNUSm = math.huge
+local function findClosestDoor(root)
+    local closestPrompt
+    local closestPart
+    local closestDistance = math.huge
 
- for wgmbTcoOGO8CDvI9Yht, S11eCuZnnulon0woO in ipairs(yeG29eqODOeibjulsiHw:GetChildren()) do
- local gkrnTwXFRWqfBCTymwnbHa = S11eCuZnnulon0woO:FindFirstChild("\68\x4f\79\x52\32\49\32\x4e\69\x57")
- local jedctFyYmcPkWuFz50l9 = gkrnTwXFRWqfBCTymwnbHa and gkrnTwXFRWqfBCTymwnbHa:FindFirstChild("\70\x72\x61\x6d\101")
- local a098uBMZFKbqebxwlfuR = jedctFyYmcPkWuFz50l9 and jedctFyYmcPkWuFz50l9:FindFirstChild("\84\x72\105\99\107\79\x72\84\x72\x65\97\x74")
+    for _, tree in ipairs(trees:GetChildren()) do
+        local door = tree:FindFirstChild("DOOR 1 NEW")
+        local frame = door and door:FindFirstChild("Frame")
+        local prompt = frame and frame:FindFirstChild("TrickOrTreat")
 
- if a098uBMZFKbqebxwlfuR and a098uBMZFKbqebxwlfuR:IsA("\x50\114\x6f\x78\105\109\x69\x74\121\80\x72\x6f\x6d\112\116") then
- local k10geIe5gTdk8gYHhb9B = a098uBMZFKbqebxwlfuR.Parent
+        if prompt and prompt:IsA("ProximityPrompt") then
+            local part = prompt.Parent
 
- if k10geIe5gTdk8gYHhb9B and k10geIe5gTdk8gYHhb9B:IsA("\66\x61\115\x65\x50\97\x72\x74") then
- local ZjUqheiOC5iYydCqlhogn = (d5X1ieoOOfanvSYbu.Position - k10geIe5gTdk8gYHhb9B.Position).Magnitude
+            if part and part:IsA("BasePart") then
+                local distance = (root.Position - part.Position).Magnitude
 
- if ZjUqheiOC5iYydCqlhogn < eVWSoY8xw9wzpNUSm then
- eVWSoY8xw9wzpNUSm = ZjUqheiOC5iYydCqlhogn
- lL5yxo0lD0Sqlo8ynvT = a098uBMZFKbqebxwlfuR
- retLfx5Fh1sASplK8 = k10geIe5gTdk8gYHhb9B
- end
- end
- end
- end
+                if distance < closestDistance then
+                    closestDistance = distance
+                    closestPrompt = prompt
+                    closestPart = part
+                end
+            end
+        end
+    end
 
- return lL5yxo0lD0Sqlo8ynvT, retLfx5Fh1sASplK8
+    return closestPrompt, closestPart
 end
 
-local function xulnVrOuMUDoun(k10geIe5gTdk8gYHhb9B)
- local zJiDs9z5sBKuoWu = workspace.CurrentCamera
- if not zJiDs9z5sBKuoWu or not k10geIe5gTdk8gYHhb9B then return nil end
- local kNfmHgbL5Kb5qMB = {
- type = cam.CameraType,
- subject = zJiDs9z5sBKuoWu.CameraSubject,
- cframe = zJiDs9z5sBKuoWu.CFrame,
- }
- pcall(function()
- zJiDs9z5sBKuoWu.CFrame = CFrame.lookAt(zJiDs9z5sBKuoWu.CFrame.Position, k10geIe5gTdk8gYHhb9B.Position)
- end)
- return kNfmHgbL5Kb5qMB
+-- ===== AIM CAMERA =====
+local function aimCameraAt(part)
+    local cam = workspace.CurrentCamera
+    if not cam or not part then return nil end
+    local saved = {
+        type = cam.CameraType,
+        subject = cam.CameraSubject,
+        cframe = cam.CFrame,
+    }
+    pcall(function()
+        cam.CFrame = CFrame.lookAt(cam.CFrame.Position, part.Position)
+    end)
+    return saved
 end
 
-local function IPiMIOzCZskxhotoliGcu(kNfmHgbL5Kb5qMB)
- local zJiDs9z5sBKuoWu = workspace.CurrentCamera
- if not zJiDs9z5sBKuoWu or not kNfmHgbL5Kb5qMB then return end
- pcall(function()
- zJiDs9z5sBKuoWu.CameraType = kNfmHgbL5Kb5qMB.type
- zJiDs9z5sBKuoWu.CameraSubject = kNfmHgbL5Kb5qMB.subject
- zJiDs9z5sBKuoWu.CFrame = kNfmHgbL5Kb5qMB.cframe
- end)
+local function restoreCamera(saved)
+    local cam = workspace.CurrentCamera
+    if not cam or not saved then return end
+    pcall(function()
+        cam.CameraType = saved.type
+        cam.CameraSubject = saved.subject
+        cam.CFrame = saved.cframe
+    end)
 end
 
-local function g1xLFvFOeauhvb(a098uBMZFKbqebxwlfuR, k10geIe5gTdk8gYHhb9B, ycELSlnfTethSi1, d5X1ieoOOfanvSYbu, iwoxCy0hqSgDhZi0zISiT)
- if su0IXeIt1Sncb21CVind > (bit32.bxor(636533371,636533371)) then
- ohwJcAnbqSIzlIZboiJ = SMIsn0Bb19iuYDgT
- nXJ5ZVBeIyLhuiqnKJ2C("\80\114\x65\x76\32\x64\x6f\x6f\x72\x3a\x20\43" .. ohwJcAnbqSIzlIZboiJ .. "\32\99\x61\110\100\121")
- else
- ohwJcAnbqSIzlIZboiJ = (bit32.bxor(388432447,388432447))
- end
- SMIsn0Bb19iuYDgT = (bit32.bxor(1490757727,1490757727))
+-- ===== KNOCK DOOR (no webhook) =====
+local function knockDoor(prompt, part, character, root, humanoid)
+    if doorsKnocked > 0 then
+        lastDoorCandy = candySinceLastDoor
+        addLog("Prev door: +" .. lastDoorCandy .. " candy")
+    else
+        lastDoorCandy = 0
+    end
+    candySinceLastDoor = 0
 
- pcall(function()
- local shazFibcYRa2uwfA = k10geIe5gTdk8gYHhb9B.Position
- local IlBmJvPBGgnTZbTayZOlax = shazFibcYRa2uwfA + (shazFibcYRa2uwfA - d5X1ieoOOfanvSYbu.Position).Unit * (bit32.bxor(301886307,301886310)) + Vector3.new((bit32.bxor(827162917,827162917)), (bit32.bxor(496770237,496770238)), (bit32.bxor(1293942357,1293942357)))
- d5X1ieoOOfanvSYbu.CFrame = CFrame.lookAt(IlBmJvPBGgnTZbTayZOlax, shazFibcYRa2uwfA)
- end)
- d5X1ieoOOfanvSYbu.AssemblyLinearVelocity = Vector3.zero
+    pcall(function()
+        local doorPos = part.Position
+        local standPos = doorPos + (doorPos - root.Position).Unit * 5 + Vector3.new(0, 3, 0)
+        root.CFrame = CFrame.lookAt(standPos, doorPos)
+    end)
+    root.AssemblyLinearVelocity = Vector3.zero
 
- task.wait(0.25)
+    task.wait(0.25)
 
- local rohdzOeOMofId8ordkqAUC = xulnVrOuMUDoun(k10geIe5gTdk8gYHhb9B)
- task.wait(0.08)
- xulnVrOuMUDoun(k10geIe5gTdk8gYHhb9B)
+    local savedCam = aimCameraAt(part)
+    task.wait(0.08)
+    aimCameraAt(part)
 
- CZBIUiXhIU9SlC1rnk8XT("\x4b\110\111\99\x6b\105\x6e\x67\x20\100\111\111\x72\46\x2e\x2e")
+    setStatus("Knocking door...")
 
- local kY9eYnygLLMIq8rD = pcall(function()
- fireproximityprompt(a098uBMZFKbqebxwlfuR)
- end)
+    local ok = pcall(function()
+        fireproximityprompt(prompt)
+    end)
 
- if kY9eYnygLLMIq8rD then
- su0IXeIt1Sncb21CVind = su0IXeIt1Sncb21CVind + (bit32.bxor(8471901,8471900))
- local OMzZix8O9OjuiiPfScaoz9 = (bit32.bxor(1983181251,1983181251))
- while OMzZix8O9OjuiiPfScaoz9 < 1.5 do
- task.wait(0.1)
- OMzZix8O9OjuiiPfScaoz9 = OMzZix8O9OjuiiPfScaoz9 + 0.1
- if IPvhcB98ljskTTeiTZjKYX(ycELSlnfTethSi1) then break end
- end
- else
- nXJ5ZVBeIyLhuiqnKJ2C("\70\105\x72\101\32\102\x61\105\x6c\101\100")
- end
+    if ok then
+        doorsKnocked = doorsKnocked + 1
+        local waited = 0
+        while waited < 1.5 do
+            task.wait(0.1)
+            waited = waited + 0.1
+            if isBusy(character) then break end
+        end
+    else
+        addLog("Fire failed")
+    end
 
- IPiMIOzCZskxhotoliGcu(rohdzOeOMofId8ordkqAUC)
- return kY9eYnygLLMIq8rD
+    restoreCamera(savedCam)
+    return ok
 end
 
-nXJ5ZVBeIyLhuiqnKJ2C("\x4c\x6f\97\x64\x65\100\x20\x2d\32\104\111\112\x20\x65\x76\101\114\121\32\x31\x30\x6d")
+addLog("Loaded - hop every 10m")
 
 while task.wait() do
- if tick() - ovlvSZnn0BnGnqsW2 >= hIOBW9bZbqO1BJUqnhbx_c then
- ulx2YlTIOtplYkhMiuLqzo("\49\x30\109\x20\x74\x69\109\x65\x72")
- return
- end
+    if tick() - hopStart >= HOP_INTERVAL then
+        hopServer("10m timer")
+        return
+    end
 
- local ycELSlnfTethSi1 = fgVXlOSo2nuknDCiu8I.Character
- local d5X1ieoOOfanvSYbu = ycELSlnfTethSi1 and ycELSlnfTethSi1:FindFirstChild("\x48\x75\x6d\x61\110\111\x69\x64\82\111\x6f\116\x50\97\114\x74")
- local iwoxCy0hqSgDhZi0zISiT = ycELSlnfTethSi1 and ycELSlnfTethSi1:FindFirstChildOfClass("\x48\x75\x6d\97\x6e\111\x69\x64")
+    local character = player.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 
- if not d5X1ieoOOfanvSYbu or not iwoxCy0hqSgDhZi0zISiT then
- CZBIUiXhIU9SlC1rnk8XT("\x57\97\x69\x74\105\x6e\103\32\102\x6f\114\x20\x63\x68\x61\114\x61\99\x74\101\114\46\x2e\46")
- continue
- end
+    if not root or not humanoid then
+        setStatus("Waiting for character...")
+        continue
+    end
 
- if iwoxCy0hqSgDhZi0zISiT.Health <= (bit32.bxor(773753068,773753068)) then
- CZBIUiXhIU9SlC1rnk8XT("\67\x68\97\114\x61\x63\x74\x65\114\32\x64\101\97\100\46\46\46")
- continue
- end
+    if humanoid.Health <= 0 then
+        setStatus("Character dead...")
+        continue
+    end
 
- if IPvhcB98ljskTTeiTZjKYX(ycELSlnfTethSi1) then
- CZBIUiXhIU9SlC1rnk8XT("\x44\111\x6f\x72\x2e\46\46")
- continue
- end
+    if isBusy(character) then
+        setStatus("Door...")
+        continue
+    end
 
- local ne8uZb2cLLnv1qo
- local eVWSoY8xw9wzpNUSm = math.huge
+    local closestCandy
+    local closestDistance = math.huge
 
- for wgmbTcoOGO8CDvI9Yht, dIdZyjxxSSBzSI5xIbe in ipairs(hlvskfZzYrItxz:GetChildren()) do
- local kqJvcg2toasbiiiVb_xD = dIdZyjxxSSBzSI5xIbe:GetAttribute("\x52\x65\x73\x74")
+    for _, candy in ipairs(folder:GetChildren()) do
+        local rest = candy:GetAttribute("Rest")
 
- if kqJvcg2toasbiiiVb_xD then
- local ZjUqheiOC5iYydCqlhogn = (d5X1ieoOOfanvSYbu.Position - kqJvcg2toasbiiiVb_xD.Position).Magnitude
+        if rest then
+            local distance = (root.Position - rest.Position).Magnitude
 
- if ZjUqheiOC5iYydCqlhogn < eVWSoY8xw9wzpNUSm then
- eVWSoY8xw9wzpNUSm = ZjUqheiOC5iYydCqlhogn
- ne8uZb2cLLnv1qo = kqJvcg2toasbiiiVb_xD
- end
- end
- end
+            if distance < closestDistance then
+                closestDistance = distance
+                closestCandy = rest
+            end
+        end
+    end
 
- if ne8uZb2cLLnv1qo then
- if ne8uZb2cLLnv1qo ~= aoHHBeB1qn1vSbSAnPse then
- lN5qM28uW8Rlss8xbbX = lN5qM28uW8Rlss8xbbX + (bit32.bxor(1879334990,1879334991))
- SMIsn0Bb19iuYDgT = SMIsn0Bb19iuYDgT + (bit32.bxor(594375595,594375594))
- aoHHBeB1qn1vSbSAnPse = ne8uZb2cLLnv1qo
- end
- CZBIUiXhIU9SlC1rnk8XT("\67\111\x6c\108\x65\99\x74\x69\x6e\103\x20\x63\x61\x6e\100\121\46\x2e\46")
- d5X1ieoOOfanvSYbu.CFrame = CFrame.new(ne8uZb2cLLnv1qo.Position + Vector3.new((bit32.bxor(948372088,948372088)), (bit32.bxor(1367531533,1367531529)), (bit32.bxor(1566357063,1566357063))))
- iwoxCy0hqSgDhZi0zISiT.Jump = true
- iwoxCy0hqSgDhZi0zISiT:ChangeState(Enum.HumanoidStateType.Jumping)
- else
- aoHHBeB1qn1vSbSAnPse = nil
- local a098uBMZFKbqebxwlfuR, k10geIe5gTdk8gYHhb9B = pvKnZniqy8YxEVC(d5X1ieoOOfanvSYbu)
+    if closestCandy then
+        if closestCandy ~= lastCandyRef then
+            candyCollected = candyCollected + 1
+            candySinceLastDoor = candySinceLastDoor + 1
+            lastCandyRef = closestCandy
+        end
+        setStatus("Collecting candy...")
+        root.CFrame = CFrame.new(closestCandy.Position + Vector3.new(0, 4, 0))
+        humanoid.Jump = true
+        humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+    else
+        lastCandyRef = nil
+        local prompt, part = findClosestDoor(root)
 
- if a098uBMZFKbqebxwlfuR and k10geIe5gTdk8gYHhb9B then
- CZBIUiXhIU9SlC1rnk8XT("\x56\x69\115\105\x74\105\x6e\103\x20\x64\x6f\x6f\x72\46\46\x2e")
- g1xLFvFOeauhvb(a098uBMZFKbqebxwlfuR, k10geIe5gTdk8gYHhb9B, ycELSlnfTethSi1, d5X1ieoOOfanvSYbu, iwoxCy0hqSgDhZi0zISiT)
- else
- CZBIUiXhIU9SlC1rnk8XT("\x4e\111\32\99\97\110\100\x79\x20\45\32\110\111\32\100\x6f\x6f\x72\x73")
- d5X1ieoOOfanvSYbu.CFrame = CFrame.new((bit32.bxor(654526027,654526027)), (bit32.bxor(1578330411,1578330447)), (bit32.bxor(1209272678,1209272678)))
- end
- end
+        if prompt and part then
+            setStatus("Visiting door...")
+            knockDoor(prompt, part, character, root, humanoid)
+        else
+            setStatus("No candy - no doors")
+            root.CFrame = CFrame.new(0, 100, 0)
+        end
+    end
 end
