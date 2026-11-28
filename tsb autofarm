@@ -1,5 +1,5 @@
 -- ╔══════════════════════════════════════════════╗
--- ║   TSB AutoFarm v4.5  |  catlazydev            ║
+-- ║   TSB AutoFarm v4 with test skill  |  catlazydev            ║
 -- ║   Under-target pos + skill spam + cam       ║
 -- ╚══════════════════════════════════════════════╝
 
@@ -50,23 +50,6 @@ local function sendKey(down, key)
     VirtualInputManager:SendKeyEvent(down, key, false, game)
 end
 
--- FIX: click tại tâm viewport, không phải (0,0,0)
-local function sendMouse(down)
-    local camera = Workspace.CurrentCamera
-    local vp = (camera and camera.ViewportSize) or Vector2.new(1280, 720)
-    local cx = math.floor(vp.X * 0.5)
-    local cy = math.floor(vp.Y * 0.5)
-    if down then
-        pcall(function()
-            VirtualInputManager:SendMouseMoveEvent(cx, cy, game)
-        end)
-    end
-    pcall(function()
-        VirtualInputManager:SendMouseButtonEvent(cx, cy, 0, down, game, 0)
-    end)
-end
-
--- Ép hướng nhân vật lên target
 local function faceTarget()
     local char     = LocalPlayer.Character
     local localHrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -85,15 +68,6 @@ local function faceTarget()
     localHrp.CFrame = CFrame.lookAt(underTarget, targetPos)
 end
 
--- M1 fire: face → đợi CFrame replicate → click → release
-local function fireM1()
-    faceTarget()
-    task.wait()            -- 1 frame cho CFrame replicate lên server
-    sendMouse(true)
-    task.wait(0.02)
-    sendMouse(false)
-end
-
 local function spamSkills()
     for _, key in ipairs({
         Enum.KeyCode.One, Enum.KeyCode.Two,
@@ -104,9 +78,7 @@ local function spamSkills()
         sendKey(true,  key) ; task.wait(0.02)
         faceTarget()
         sendKey(false, key)
-        fireM1()
     end
-    fireM1()
 end
 
 -- ══════════════════════════════════════
@@ -213,18 +185,6 @@ task.spawn(function()
 end)
 
 -- ══════════════════════════════════════
---  AUTOFARM  —  M1 LOOP (riêng, spam click)
--- ══════════════════════════════════════
-task.spawn(function()
-    while true do
-        task.wait(0.08)
-        if not _G.flag then continue end
-        if not _G.player then continue end
-        fireM1()
-    end
-end)
-
--- ══════════════════════════════════════
 --  AUTOFARM  —  SKILL SPAM LOOP
 -- ══════════════════════════════════════
 task.spawn(function()
@@ -274,7 +234,7 @@ local combatTab = window:CreateTab({ name = "Combat", icon = 10723415903 })
 
 combatTab:CreateToggle({
     name         = "Auto Kill Farm",
-    info         = "Nằm dưới target, spam skill 1-4 + LMB tự động",
+    info         = "Nằm dưới target, spam skill 1-4 tự động",
     currentValue = false,
     callback     = function(v)
         _G.flag = v
