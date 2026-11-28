@@ -1,5 +1,5 @@
 -- ╔══════════════════════════════════════════════╗
--- ║   TSB AutoFarm v4  |  catlazydev            ║
+-- ║   TSB AutoFarm v4.1  |  catlazydev            ║
 -- ║   Under-target pos + skill spam + cam       ║
 -- ╚══════════════════════════════════════════════╝
 
@@ -26,7 +26,7 @@ _G.ragdollCheckDelay             = 0.05
 -- ══════════════════════════════════════
 --  TUNABLES
 -- ══════════════════════════════════════
-local UNDER_OFFSET_Y = 7    -- studs dưới target
+local UNDER_OFFSET_Y = 8    -- studs dưới target
 
 -- ══════════════════════════════════════
 --  HELPERS
