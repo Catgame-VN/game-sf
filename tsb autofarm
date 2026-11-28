@@ -30,7 +30,7 @@ local M1_INTERVAL    = 0.12
 local function getRandomEnemy()
     local list = {}
     for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer
+        if p \~= LocalPlayer
             and p.Character
             and p.Character:FindFirstChild("Humanoid")
             and p.Character.Humanoid.Health > 0
@@ -65,41 +65,95 @@ local function faceTarget()
 end
 
 -- ══════════════════════════════════════
---  PUNCH BUTTON LOCATOR
+--  PUNCH BUTTON LOCATOR (deep search)
 -- ══════════════════════════════════════
 local punchCache = nil
 
 local function isPunchCandidate(obj)
     if not obj or not obj.Parent then return false end
-    if not obj:IsA("GuiButton") then return false end
+    if not (obj:IsA("GuiButton") or obj:IsA("ImageButton") or obj:IsA("TextButton")) then
+        return false
+    end
     local n = string.lower(obj.Name)
-    return n == "punchbutton"
+    if n == "punchbutton"
         or n == "m1button"
         or n == "attackbutton"
-        or string.find(n, "punch") ~= nil
-        or string.find(n, "attack") ~= nil
-        or string.find(n, "^m1") ~= nil
+        or n == "punch"
+        or n == "m1"
+        or n == "attack"
+        or string.find(n, "punch")
+        or string.find(n, "attack")
+        or string.find(n, "m1")
+        or string.find(n, "hit")
+        or string.find(n, "combat")
+    then
+        return true
+    end
+    -- text content check
+    if obj:IsA("TextButton") and obj.Text then
+        local t = string.lower(obj.Text)
+        if string.find(t, "punch") or string.find(t, "attack") or string.find(t, "m1") then
+            return true
+        end
+    end
+    return false
 end
 
 local function findPunchButton()
     local pg = LocalPlayer:FindFirstChild("PlayerGui")
     if not pg then return nil end
 
-    for _, name in ipairs({ "PunchButton", "M1Button", "AttackButton" }) do
+    -- 1. exact name recursive
+    for _, name in ipairs({
+        "PunchButton", "M1Button", "AttackButton",
+        "Punch", "M1", "Attack", "HitButton", "CombatButton"
+    }) do
         local found = pg:FindFirstChild(name, true)
-        if isPunchCandidate(found) then return found end
-    end
-
-    local best = nil
-    for _, obj in ipairs(pg:GetDescendants()) do
-        if isPunchCandidate(obj) then
-            if obj.Visible and obj.AbsoluteSize.X > 0 and obj.AbsoluteSize.Y > 0 then
-                return obj
-            end
-            best = best or obj
+        if isPunchCandidate(found) then
+            return found
         end
     end
-    return best
+
+    -- 2. deep recursive scan of every GuiButton / ImageButton / TextButton
+    local candidates = {}
+    for _, obj in ipairs(pg:GetDescendants()) do
+        if isPunchCandidate(obj) then
+            table.insert(candidates, obj)
+        end
+    end
+
+    -- 3. prefer visible + has size
+    for _, obj in ipairs(candidates) do
+        if obj.Visible
+            and obj.AbsoluteSize.X > 5
+            and obj.AbsoluteSize.Y > 5
+            and obj.AbsolutePosition.X >= 0
+            and obj.AbsolutePosition.Y >= 0
+        then
+            return obj
+        end
+    end
+
+    -- 4. fallback: any candidate that still exists
+    if #candidates > 0 then
+        return candidates[1]
+    end
+
+    -- 5. last resort: scan CoreGui too (some executors expose it)
+    local core = game:GetService("CoreGui")
+    if core then
+        for _, obj in ipairs(core:GetDescendants()) do
+            if isPunchCandidate(obj)
+                and obj.Visible
+                and obj.AbsoluteSize.X > 5
+                and obj.AbsoluteSize.Y > 5
+            then
+                return obj
+            end
+        end
+    end
+
+    return nil
 end
 
 local function fireM1()
@@ -110,6 +164,8 @@ local function fireM1()
     if punchCache and type(firesignal) == "function" then
         local ok = pcall(firesignal, punchCache.MouseButton1Click)
         if ok then return end
+        -- try Activated too
+        pcall(firesignal, punchCache.Activated)
     end
 
     if punchCache and punchCache.Visible then
@@ -323,7 +379,7 @@ repeat
         warn("[TSB] Rayfield failed, retry in 1s... " .. tostring(err))
         task.wait(1)
     end
-until Rayfield ~= nil
+until Rayfield \~= nil
 
 local window = Rayfield:CreateWindow({
     name     = "TSB AutoFarm v2",
@@ -419,15 +475,15 @@ combatTab:CreateButton({
         else
             Rayfield:Notify({
                 title    = "Not Found",
-                content  = "Không thấy button punch trong PlayerGui",
+                content  = "Không thấy button punch trong PlayerGui / CoreGui",
                 duration = 5,
             })
             print("[TSB] PunchButton not found. List GuiButtons:")
             local pg = LocalPlayer:FindFirstChild("PlayerGui")
             if pg then
                 for _, o in ipairs(pg:GetDescendants()) do
-                    if o:IsA("GuiButton") then
-                        print(" -", o:GetFullName(), "| Visible:", o.Visible)
+                    if o:IsA("GuiButton") or o:IsA("ImageButton") or o:IsA("TextButton") then
+                        print(" -", o:GetFullName(), "| Visible:", o.Visible, "| Size:", tostring(o.AbsoluteSize))
                     end
                 end
             end
