@@ -21,7 +21,8 @@ _G.ragdollCheckDelay             = 0.05
 -- ══════════════════════════════════════
 --  TUNABLES
 -- ══════════════════════════════════════
-local GROUND_Y       = -10   -- Y cố định dưới lòng đất — không trồi lên theo target
+local UNDER_OFFSET   = 5     -- studs dưới target (đủ gần để hit)
+local MAX_Y_ABOVE    = -3    -- trần: Y không bao giờ vượt mức này (luôn dưới đất)
 local M1_INTERVAL    = 0.12
 
 -- ══════════════════════════════════════
@@ -46,6 +47,11 @@ local function sendKey(down, key)
     VirtualInputManager:SendKeyEvent(down, key, false, game)
 end
 
+-- Tính Y: luôn UNDER_OFFSET dưới target, nhưng không vượt MAX_Y_ABOVE
+local function computeStandY(targetY)
+    return math.min(targetY - UNDER_OFFSET, MAX_Y_ABOVE)
+end
+
 local function faceTarget()
     local char     = LocalPlayer.Character
     local localHrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -56,7 +62,8 @@ local function faceTarget()
     if not targetHrp then return end
 
     local targetPos   = targetHrp.Position
-    local underTarget = Vector3.new(targetPos.X, GROUND_Y, targetPos.Z)
+    local standY      = computeStandY(targetPos.Y)
+    local underTarget = Vector3.new(targetPos.X, standY, targetPos.Z)
     localHrp.CFrame = CFrame.lookAt(underTarget, targetPos)
 end
 
@@ -236,7 +243,8 @@ end)
 
 -- ══════════════════════════════════════
 --  AUTOFARM — POSITION LOOP
---  Y cố định GROUND_Y, X/Z bám target
+--  Y = target.Y - UNDER_OFFSET, cap MAX_Y_ABOVE (không trồi lên)
+--  X/Z bám target
 -- ══════════════════════════════════════
 task.spawn(function()
     while true do
@@ -259,13 +267,14 @@ task.spawn(function()
         if not localHrp or not targetHrp then continue end
 
         local targetPos   = targetHrp.Position
-        local underTarget = Vector3.new(targetPos.X, GROUND_Y, targetPos.Z)
+        local standY      = computeStandY(targetPos.Y)
+        local underTarget = Vector3.new(targetPos.X, standY, targetPos.Z)
         localHrp.CFrame = CFrame.lookAt(underTarget, targetPos)
     end
 end)
 
 -- ══════════════════════════════════════
---  AUTOFARM — M1 LOOP (PunchButton)
+--  AUTOFARM — M1 LOOP
 -- ══════════════════════════════════════
 task.spawn(function()
     while true do
@@ -328,7 +337,7 @@ local combatTab = window:CreateTab({ name = "Combat", icon = 10723415903 })
 
 combatTab:CreateToggle({
     name         = "Auto Kill Farm",
-    info         = "Ở dưới lòng đất, X/Z bám target, spam skill 1-4 + PunchButton",
+    info         = "Ngay dưới target, không trồi lên, spam skill + PunchButton",
     currentValue = false,
     callback     = function(v)
         _G.flag = v
