@@ -1,4 +1,8 @@
--- dcm m
+-- ╔══════════════════════════════════════════════╗
+-- ║   TSB AutoFarm v3.1  |  catlazydev            ║
+-- ║   Under-target + range buffer + low-HP prio ║
+-- ║   M1 spam + kill counter + Look Above Map   ║
+-- ╚══════════════════════════════════════════════╝
 
 local Players             = game:GetService("Players")
 local RunService          = game:GetService("RunService")
