@@ -1,8 +1,4 @@
--- ╔══════════════════════════════════════════════╗
--- ║   TSB AutoFarm v3  |  catlazydev            ║
--- ║   Under-target + range buffer + low-HP prio ║
--- ║   M1 spam + kill counter + Look Above Map   ║
--- ╚══════════════════════════════════════════════╝
+-- dcm m
 
 local Players             = game:GetService("Players")
 local RunService          = game:GetService("RunService")
@@ -248,7 +244,7 @@ task.spawn(function()
         local yaw = CFrame.lookAt(standPos, Vector3.new(predictedPos.X, UNDERGROUND_Y, predictedPos.Z))
         localHrp.CFrame = CFrame.new(standPos)
             * CFrame.Angles(0, select(2, yaw:ToEulerAnglesYXZ()), 0)
-            * CFrame.Angles(math.rad(-90), 0, 0)
+            * CFrame.Angles(math.rad(90), 0, 0)
     end
 end)
 
