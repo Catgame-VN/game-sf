@@ -1,8 +1,4 @@
--- ╔══════════════════════════════════════════════╗
--- ║   TSB AutoFarm v4.1  |  catlazydev            ║
--- ║   Under-target pos + skill spam + cam       ║
--- ╚══════════════════════════════════════════════╝
-
+-- v5
 local Players             = game:GetService("Players")
 local RunService          = game:GetService("RunService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
@@ -26,7 +22,8 @@ _G.ragdollCheckDelay             = 0.05
 -- ══════════════════════════════════════
 --  TUNABLES
 -- ══════════════════════════════════════
-local UNDER_OFFSET_Y = 8    -- studs dưới target
+local UNDER_OFFSET_Y = 9
+local M1_INTERVAL    = 1
 
 -- ══════════════════════════════════════
 --  HELPERS
@@ -59,13 +56,114 @@ local function faceTarget()
     local targetHrp  = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
     if not targetHrp then return end
 
-    local targetPos  = targetHrp.Position
+    local targetPos   = targetHrp.Position
     local underTarget = Vector3.new(
         targetPos.X,
         targetPos.Y - UNDER_OFFSET_Y,
         targetPos.Z
     )
     localHrp.CFrame = CFrame.lookAt(underTarget, targetPos)
+end
+
+-- ══════════════════════════════════════
+--  PUNCH BUTTON LOCATOR
+-- ══════════════════════════════════════
+local punchCache = nil
+
+local function isPunchCandidate(obj)
+    if not obj or not obj.Parent then return false end
+    if not obj:IsA("GuiButton") then return false end
+    local n = string.lower(obj.Name)
+    return n == "punchbutton"
+        or n == "m1button"
+        or n == "attackbutton"
+        or string.find(n, "punch") ~= nil
+        or string.find(n, "attack") ~= nil
+        or string.find(n, "^m1") ~= nil
+end
+
+local function findPunchButton()
+    local pg = LocalPlayer:FindFirstChild("PlayerGui")
+    if not pg then return nil end
+
+    -- exact names first
+    for _, name in ipairs({ "PunchButton", "M1Button", "AttackButton" }) do
+        local found = pg:FindFirstChild(name, true)
+        if isPunchCandidate(found) then return found end
+    end
+
+    -- fuzzy: deepest visible GuiButton matching pattern
+    local best = nil
+    for _, obj in ipairs(pg:GetDescendants()) do
+        if isPunchCandidate(obj) then
+            if obj.Visible and obj.AbsoluteSize.X > 0 and obj.AbsoluteSize.Y > 0 then
+                return obj
+            end
+            best = best or obj
+        end
+    end
+    return best
+end
+
+-- ══════════════════════════════════════
+--  MOBILE M1 — fires PunchButton
+-- ══════════════════════════════════════
+local function fireM1()
+    -- Refresh cache if stale
+    if not punchCache or not punchCache.Parent then
+        punchCache = findPunchButton()
+    end
+
+    -- Layer 1: firesignal on button click — cleanest, no coordinates
+    if punchCache and type(firesignal) == "function" then
+        local ok = pcall(firesignal, punchCache.MouseButton1Click)
+        if ok then return end
+    end
+
+    -- Layer 2: tap at button absolute center
+    if punchCache and punchCache.Visible then
+        local pos  = punchCache.AbsolutePosition
+        local size = punchCache.AbsoluteSize
+        if size.X > 0 and size.Y > 0 then
+            local cx = math.floor(pos.X + size.X * 0.5)
+            local cy = math.floor(pos.Y + size.Y * 0.5)
+            pcall(function()
+                VirtualInputManager:SendMouseMoveEvent(cx, cy, game)
+            end)
+            pcall(function()
+                VirtualInputManager:SendMouseButtonEvent(cx, cy, 0, true, game, 0)
+            end)
+            task.wait(0.02)
+            pcall(function()
+                VirtualInputManager:SendMouseButtonEvent(cx, cy, 0, false, game, 0)
+            end)
+            return
+        end
+    end
+
+    -- Layer 3: executor helper
+    if type(mouse1click) == "function" then
+        if pcall(mouse1click) then return end
+    end
+    if type(mouse1press) == "function" and type(mouse1release) == "function" then
+        if pcall(function()
+            mouse1press() ; task.wait(0.02) ; mouse1release()
+        end) then return end
+    end
+
+    -- Layer 4: viewport center fallback
+    local camera = Workspace.CurrentCamera
+    if not camera then return end
+    local vp = camera.ViewportSize
+    local cx = math.floor(vp.X * 0.5)
+    local cy = math.floor(vp.Y * 0.5)
+    pcall(function()
+        VirtualInputManager:SendMouseButtonEvent(cx, cy, 0, true, game, 0)
+    end)
+    task.wait(0.02)
+    pcall(function()
+        VirtualInputManager:SendMouseButtonEvent(cx, cy, 0, false, game, 0)
+    end)
 end
 
 local function spamSkills()
@@ -82,7 +180,7 @@ local function spamSkills()
 end
 
 -- ══════════════════════════════════════
---  LOOK ABOVE MAP  (camera)
+--  LOOK ABOVE MAP
 -- ══════════════════════════════════════
 RunService.RenderStepped:Connect(function()
     local camera = Workspace.CurrentCamera
@@ -110,7 +208,7 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- ══════════════════════════════════════
---  AUTO BLOCK  (F spam every 3 frames)
+--  AUTO BLOCK
 -- ══════════════════════════════════════
 local blockFrameCounter = 0
 RunService.PreRender:Connect(function()
@@ -152,7 +250,7 @@ task.spawn(function()
 end)
 
 -- ══════════════════════════════════════
---  AUTOFARM  —  POSITION LOOP
+--  AUTOFARM — POSITION LOOP
 -- ══════════════════════════════════════
 task.spawn(function()
     while true do
@@ -174,7 +272,7 @@ task.spawn(function()
                           and _G.player.Character:FindFirstChild("HumanoidRootPart")
         if not localHrp or not targetHrp then continue end
 
-        local targetPos  = targetHrp.Position
+        local targetPos   = targetHrp.Position
         local underTarget = Vector3.new(
             targetPos.X,
             targetPos.Y - UNDER_OFFSET_Y,
@@ -185,7 +283,21 @@ task.spawn(function()
 end)
 
 -- ══════════════════════════════════════
---  AUTOFARM  —  SKILL SPAM LOOP
+--  AUTOFARM — M1 LOOP (PunchButton)
+-- ══════════════════════════════════════
+task.spawn(function()
+    while true do
+        task.wait(M1_INTERVAL)
+        if not _G.flag then continue end
+        if not _G.player then continue end
+        faceTarget()
+        task.wait()
+        fireM1()
+    end
+end)
+
+-- ══════════════════════════════════════
+--  AUTOFARM — SKILL SPAM LOOP
 -- ══════════════════════════════════════
 task.spawn(function()
     local ultimateTimer = tick()
@@ -234,7 +346,7 @@ local combatTab = window:CreateTab({ name = "Combat", icon = 10723415903 })
 
 combatTab:CreateToggle({
     name         = "Auto Kill Farm",
-    info         = "Nằm dưới target, spam skill 1-4 tự động",
+    info         = "Nằm dưới target, spam skill 1-4 + PunchButton",
     currentValue = false,
     callback     = function(v)
         _G.flag = v
@@ -296,6 +408,40 @@ combatTab:CreateButton({
                 content  = "Không tìm thấy enemy sống",
                 duration = 3,
             })
+        end
+    end,
+})
+
+combatTab:CreateButton({
+    name     = "Debug Punch Button",
+    callback = function()
+        punchCache = nil
+        local btn = findPunchButton()
+        if btn then
+            Rayfield:Notify({
+                title    = "Punch Button Found",
+                content  = btn:GetFullName(),
+                duration = 5,
+            })
+            print("[TSB] PunchButton:", btn:GetFullName(),
+                  "| Size:", tostring(btn.AbsoluteSize),
+                  "| Visible:", btn.Visible,
+                  "| firesignal:", type(firesignal))
+        else
+            Rayfield:Notify({
+                title    = "Not Found",
+                content  = "Không thấy button punch trong PlayerGui",
+                duration = 5,
+            })
+            print("[TSB] PunchButton not found. List GuiButtons:")
+            local pg = LocalPlayer:FindFirstChild("PlayerGui")
+            if pg then
+                for _, o in ipairs(pg:GetDescendants()) do
+                    if o:IsA("GuiButton") then
+                        print(" -", o:GetFullName(), "| Visible:", o.Visible)
+                    end
+                end
+            end
         end
     end,
 })
