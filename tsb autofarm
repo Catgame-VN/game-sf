@@ -25,7 +25,7 @@ _G.sessionKills      = 0
 _G.trackedHealth     = {}   -- [player] = lastHP
 
 -- Khoảng cách ngang cố định từ target HRP (studs)
-local RANGE_OFFSET = 8
+local RANGE_OFFSET = 6
 -- Y cố định — luôn dưới map, không trồi lên theo target
 local UNDER_MAP_Y  = -6.5
 
