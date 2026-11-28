@@ -21,7 +21,7 @@ _G.ragdollCheckDelay             = 0.05
 -- ══════════════════════════════════════
 --  TUNABLES
 -- ══════════════════════════════════════
-local GROUND_Y       = -25   -- Y cố định dưới lòng đất — không trồi lên theo target
+local GROUND_Y       = -10   -- Y cố định dưới lòng đất — không trồi lên theo target
 local M1_INTERVAL    = 0.12
 
 -- ══════════════════════════════════════
