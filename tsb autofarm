@@ -1,5 +1,5 @@
 -- ╔══════════════════════════════════════════════╗
--- ║   TSB AutoFarm v3.3  |  catlazydev            ║
+-- ║   TSB AutoFarm v3.4  |  catlazydev            ║
 -- ║   Under-target + range buffer + low-HP prio ║
 -- ║   M1 spam + kill counter + Look Above Map   ║
 -- ╚══════════════════════════════════════════════╝
@@ -30,7 +30,7 @@ _G.sessionKills      = 0
 _G.trackedHealth     = {}   -- [player] = lastHP
 
 -- Khoảng cách ngang cố định từ target HRP (studs)
-local RANGE_OFFSET = 3
+local RANGE_OFFSET = 8
 
 -- ══════════════════════════════════════
 --  HELPERS
@@ -236,10 +236,10 @@ task.spawn(function()
             offsetDir = Vector3.new(RANGE_OFFSET, 0, 0)
         end
 
-        -- teleport theo target mỗi tick, Y = target.Y - 6 (ngay dưới chân target)
+        -- teleport theo target mỗi tick, Y = target.Y - 3 (ngay dưới chân target)
         local standPos = Vector3.new(
             predictedPos.X - offsetDir.X,
-            predictedPos.Y - 6,
+            predictedPos.Y - 8,
             predictedPos.Z - offsetDir.Z
         )
 
