@@ -1,9 +1,4 @@
--- ╔══════════════════════════════════════════════╗
--- ║   TSB AutoFarm v3.4  |  catlazydev            ║
--- ║   Under-target + range buffer + low-HP prio ║
--- ║   M1 spam + kill counter + Look Above Map   ║
--- ╚══════════════════════════════════════════════╝
-
+-- update cheat
 local Players             = game:GetService("Players")
 local RunService          = game:GetService("RunService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
@@ -31,6 +26,8 @@ _G.trackedHealth     = {}   -- [player] = lastHP
 
 -- Khoảng cách ngang cố định từ target HRP (studs)
 local RANGE_OFFSET = 8
+-- Y cố định — luôn dưới map, không trồi lên theo target
+local UNDER_MAP_Y  = -6.5
 
 -- ══════════════════════════════════════
 --  HELPERS
@@ -198,9 +195,8 @@ end)
 
 -- ══════════════════════════════════════
 --  AUTOFARM — POSITION LOOP
---  Đứng cách target ~_G.rangeOffset studs
---  theo hướng ngang (không quá sát)
---  vẫn ở dưới map (-6.5 Y) để skill hit
+--  Đứng cách target ~RANGE_OFFSET studs theo hướng ngang
+--  Y cố định dưới map (UNDER_MAP_Y) — không trồi lên theo target
 -- ══════════════════════════════════════
 task.spawn(function()
     while true do
@@ -213,16 +209,16 @@ task.spawn(function()
             if not _G.player then task.wait(0.5) continue end
         end
 
-        local char     = LocalPlayer.Character
-        local localHrp = char and char:FindFirstChild("HumanoidRootPart")
+        local char      = LocalPlayer.Character
+        local localHrp  = char and char:FindFirstChild("HumanoidRootPart")
         local targetHrp = _G.player.Character:FindFirstChild("HumanoidRootPart")
         if not localHrp or not targetHrp then continue end
 
-        -- Dự đoán vị trí target tiếp theo
+        -- Dự đoán vị trí target tiếp theo (chỉ dùng X/Z)
         local predOffset   = targetHrp.AssemblyLinearVelocity * 0.1
         local predictedPos = targetHrp.Position + predOffset
 
-        -- Tính vector ngang từ local → target, normalize, offset ra _G.rangeOffset studs
+        -- Tính vector ngang từ local → target, normalize, offset ra RANGE_OFFSET studs
         local flat = Vector3.new(
             predictedPos.X - localHrp.Position.X,
             0,
@@ -236,15 +232,21 @@ task.spawn(function()
             offsetDir = Vector3.new(RANGE_OFFSET, 0, 0)
         end
 
-        -- teleport theo target mỗi tick, Y = target.Y - 3 (ngay dưới chân target)
+        -- Y luôn cố định dưới map — không trồi lên theo target
+        local standY = UNDER_MAP_Y
+        if predictedPos.Y - 8 < standY then
+            standY = predictedPos.Y - 8   -- chỉ hạ xuống nếu target rớt dưới map
+        end
+
         local standPos = Vector3.new(
             predictedPos.X - offsetDir.X,
-            predictedPos.Y - 8,
+            standY,
             predictedPos.Z - offsetDir.Z
         )
 
-        -- đứng thẳng hướng mặt về target
-        localHrp.CFrame = CFrame.lookAt(standPos, predictedPos)
+        -- Chỉ xoay ngang, không nghiêng lên target
+        local lookPos = Vector3.new(predictedPos.X, standY, predictedPos.Z)
+        localHrp.CFrame = CFrame.lookAt(standPos, lookPos)
     end
 end)
 
