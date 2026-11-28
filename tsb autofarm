@@ -1,4 +1,8 @@
-
+-- ╔══════════════════════════════════════════════╗
+-- ║   TSB AutoFarm v3  |  catlazydev            ║
+-- ║   Under-target + range buffer + low-HP prio ║
+-- ║   M1 spam + kill counter + Look Above Map   ║
+-- ╚══════════════════════════════════════════════╝
 
 local Players             = game:GetService("Players")
 local RunService          = game:GetService("RunService")
@@ -76,8 +80,6 @@ local function spamSkills()
         sendKey(true,  key) ; task.wait(0.02)
         sendKey(false, key)
     end
-    -- LMB finish
-    sendMouse(true) ; task.wait(0.01) ; sendMouse(false)
 end
 
 -- ══════════════════════════════════════
@@ -234,19 +236,24 @@ task.spawn(function()
             offsetDir = Vector3.new(RANGE_OFFSET, 0, 0)
         end
 
-        -- Đứng cách target RANGE_OFFSET studs ngang + -6.5 Y dưới target
+        -- Khoá Y cứng dưới lòng đất bất kể target ở đâu
+        local UNDERGROUND_Y = -100
         local standPos = Vector3.new(
             predictedPos.X - offsetDir.X,
-            predictedPos.Y - 6.5,
+            UNDERGROUND_Y,
             predictedPos.Z - offsetDir.Z
         )
 
-        localHrp.CFrame = CFrame.lookAt(standPos, predictedPos)
+        -- xoay Y về hướng target, pitch -90 để nhân vật nằm ngang úp xuống đất
+        local yaw = CFrame.lookAt(standPos, Vector3.new(predictedPos.X, UNDERGROUND_Y, predictedPos.Z))
+        localHrp.CFrame = CFrame.new(standPos)
+            * CFrame.Angles(0, select(2, yaw:ToEulerAnglesYXZ()), 0)
+            * CFrame.Angles(math.rad(-90), 0, 0)
     end
 end)
 
 -- ══════════════════════════════════════
---  AUTOFARM — SKILL + M1 SPAM LOOP
+--  AUTOFARM — SKILL SPAM LOOP
 -- ══════════════════════════════════════
 task.spawn(function()
     local ultimateTimer = tick()
@@ -256,7 +263,6 @@ task.spawn(function()
         if not isTargetValid(_G.player) then continue end
 
         _G.striking = true
-
         spamSkills()
 
         -- G ulti mỗi 5s
@@ -268,6 +274,19 @@ task.spawn(function()
 
         _G.striking = false
         task.wait(0.01)
+    end
+end)
+
+-- ══════════════════════════════════════
+--  AUTOFARM — M1 LOOP (độc lập)
+-- ══════════════════════════════════════
+task.spawn(function()
+    while true do
+        task.wait(0.05)
+        if not _G.flag then continue end
+        if not isTargetValid(_G.player) then continue end
+        sendMouse(true)  ; task.wait(0.05)
+        sendMouse(false)
     end
 end)
 
