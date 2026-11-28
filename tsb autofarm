@@ -22,8 +22,8 @@ _G.ragdollCheckDelay             = 0.05
 -- ══════════════════════════════════════
 --  TUNABLES
 -- ══════════════════════════════════════
-local UNDER_OFFSET_Y = 9
-local M1_INTERVAL    = 1
+local UNDER_OFFSET_Y = 10
+local M1_INTERVAL    = 0.12
 
 -- ══════════════════════════════════════
 --  HELPERS
