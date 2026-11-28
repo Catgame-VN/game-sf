@@ -1,4 +1,3 @@
--- v5
 local Players             = game:GetService("Players")
 local RunService          = game:GetService("RunService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
@@ -22,7 +21,7 @@ _G.ragdollCheckDelay             = 0.05
 -- ══════════════════════════════════════
 --  TUNABLES
 -- ══════════════════════════════════════
-local UNDER_OFFSET_Y = 10
+local GROUND_Y       = -25   -- Y cố định dưới lòng đất — không trồi lên theo target
 local M1_INTERVAL    = 0.12
 
 -- ══════════════════════════════════════
@@ -57,11 +56,7 @@ local function faceTarget()
     if not targetHrp then return end
 
     local targetPos   = targetHrp.Position
-    local underTarget = Vector3.new(
-        targetPos.X,
-        targetPos.Y - UNDER_OFFSET_Y,
-        targetPos.Z
-    )
+    local underTarget = Vector3.new(targetPos.X, GROUND_Y, targetPos.Z)
     localHrp.CFrame = CFrame.lookAt(underTarget, targetPos)
 end
 
@@ -86,13 +81,11 @@ local function findPunchButton()
     local pg = LocalPlayer:FindFirstChild("PlayerGui")
     if not pg then return nil end
 
-    -- exact names first
     for _, name in ipairs({ "PunchButton", "M1Button", "AttackButton" }) do
         local found = pg:FindFirstChild(name, true)
         if isPunchCandidate(found) then return found end
     end
 
-    -- fuzzy: deepest visible GuiButton matching pattern
     local best = nil
     for _, obj in ipairs(pg:GetDescendants()) do
         if isPunchCandidate(obj) then
@@ -105,22 +98,16 @@ local function findPunchButton()
     return best
 end
 
--- ══════════════════════════════════════
---  MOBILE M1 — fires PunchButton
--- ══════════════════════════════════════
 local function fireM1()
-    -- Refresh cache if stale
     if not punchCache or not punchCache.Parent then
         punchCache = findPunchButton()
     end
 
-    -- Layer 1: firesignal on button click — cleanest, no coordinates
     if punchCache and type(firesignal) == "function" then
         local ok = pcall(firesignal, punchCache.MouseButton1Click)
         if ok then return end
     end
 
-    -- Layer 2: tap at button absolute center
     if punchCache and punchCache.Visible then
         local pos  = punchCache.AbsolutePosition
         local size = punchCache.AbsoluteSize
@@ -141,7 +128,6 @@ local function fireM1()
         end
     end
 
-    -- Layer 3: executor helper
     if type(mouse1click) == "function" then
         if pcall(mouse1click) then return end
     end
@@ -151,7 +137,6 @@ local function fireM1()
         end) then return end
     end
 
-    -- Layer 4: viewport center fallback
     local camera = Workspace.CurrentCamera
     if not camera then return end
     local vp = camera.ViewportSize
@@ -251,6 +236,7 @@ end)
 
 -- ══════════════════════════════════════
 --  AUTOFARM — POSITION LOOP
+--  Y cố định GROUND_Y, X/Z bám target
 -- ══════════════════════════════════════
 task.spawn(function()
     while true do
@@ -273,11 +259,7 @@ task.spawn(function()
         if not localHrp or not targetHrp then continue end
 
         local targetPos   = targetHrp.Position
-        local underTarget = Vector3.new(
-            targetPos.X,
-            targetPos.Y - UNDER_OFFSET_Y,
-            targetPos.Z
-        )
+        local underTarget = Vector3.new(targetPos.X, GROUND_Y, targetPos.Z)
         localHrp.CFrame = CFrame.lookAt(underTarget, targetPos)
     end
 end)
@@ -346,7 +328,7 @@ local combatTab = window:CreateTab({ name = "Combat", icon = 10723415903 })
 
 combatTab:CreateToggle({
     name         = "Auto Kill Farm",
-    info         = "Nằm dưới target, spam skill 1-4 + PunchButton",
+    info         = "Ở dưới lòng đất, X/Z bám target, spam skill 1-4 + PunchButton",
     currentValue = false,
     callback     = function(v)
         _G.flag = v
