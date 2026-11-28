@@ -1,5 +1,5 @@
 -- ╔══════════════════════════════════════════════╗
--- ║   TSB AutoFarm v4  |  catlazydev            ║
+-- ║   TSB AutoFarm v4.5  |  catlazydev            ║
 -- ║   Under-target pos + skill spam + cam       ║
 -- ╚══════════════════════════════════════════════╝
 
@@ -12,16 +12,21 @@ local LocalPlayer         = Players.LocalPlayer
 -- ══════════════════════════════════════
 --  STATE
 -- ══════════════════════════════════════
-_G.flag                          = false   -- master autofarm toggle
+_G.flag                          = false
 _G.antiRagdollActive             = false
-_G.secondaryCreateTextButtonFlag = false   -- auto block (F spam)
-_G.lookAboveActive               = false   -- look above map while farming
-_G.xrayActive                    = false   -- look above map (xray cam)
+_G.secondaryCreateTextButtonFlag = false
+_G.lookAboveActive               = false
+_G.xrayActive                    = false
 
 _G.player                        = nil
 _G.striking                      = false
 _G.currentTrack                  = nil
-_G.ragdollCheckDelay              = 0.05
+_G.ragdollCheckDelay             = 0.05
+
+-- ══════════════════════════════════════
+--  TUNABLES
+-- ══════════════════════════════════════
+local UNDER_OFFSET_Y = 7    -- studs dưới target
 
 -- ══════════════════════════════════════
 --  HELPERS
@@ -45,32 +50,67 @@ local function sendKey(down, key)
     VirtualInputManager:SendKeyEvent(down, key, false, game)
 end
 
+-- FIX: click tại tâm viewport, không phải (0,0,0)
 local function sendMouse(down)
-    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, down, game, 0)
+    local camera = Workspace.CurrentCamera
+    local vp = (camera and camera.ViewportSize) or Vector2.new(1280, 720)
+    local cx = math.floor(vp.X * 0.5)
+    local cy = math.floor(vp.Y * 0.5)
+    if down then
+        pcall(function()
+            VirtualInputManager:SendMouseMoveEvent(cx, cy, game)
+        end)
+    end
+    pcall(function()
+        VirtualInputManager:SendMouseButtonEvent(cx, cy, 0, down, game, 0)
+    end)
+end
+
+-- Ép hướng nhân vật lên target
+local function faceTarget()
+    local char     = LocalPlayer.Character
+    local localHrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not localHrp or not _G.player then return end
+
+    local targetChar = _G.player.Character
+    local targetHrp  = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
+    if not targetHrp then return end
+
+    local targetPos  = targetHrp.Position
+    local underTarget = Vector3.new(
+        targetPos.X,
+        targetPos.Y - UNDER_OFFSET_Y,
+        targetPos.Z
+    )
+    localHrp.CFrame = CFrame.lookAt(underTarget, targetPos)
+end
+
+-- M1 fire: face → đợi CFrame replicate → click → release
+local function fireM1()
+    faceTarget()
+    task.wait()            -- 1 frame cho CFrame replicate lên server
+    sendMouse(true)
+    task.wait(0.02)
+    sendMouse(false)
 end
 
 local function spamSkills()
-    -- Skills: 1 2 3 4 + LMB combo
     for _, key in ipairs({
         Enum.KeyCode.One, Enum.KeyCode.Two,
         Enum.KeyCode.Three, Enum.KeyCode.Four
     }) do
         if not _G.flag then break end
+        faceTarget()
         sendKey(true,  key) ; task.wait(0.02)
+        faceTarget()
         sendKey(false, key)
-        sendMouse(true)  ; task.wait(0.01)
-        sendMouse(false)
+        fireM1()
     end
-    -- extra LMB hit
-    sendMouse(true)  ; task.wait(0.01)
-    sendMouse(false)
+    fireM1()
 end
 
 -- ══════════════════════════════════════
 --  LOOK ABOVE MAP  (camera)
---  When active: cam locks 14 studs above
---  the target HRP so you see the fight
---  from above-ground (xray view).
 -- ══════════════════════════════════════
 RunService.RenderStepped:Connect(function()
     local camera = Workspace.CurrentCamera
@@ -141,15 +181,12 @@ end)
 
 -- ══════════════════════════════════════
 --  AUTOFARM  —  POSITION LOOP
---  nhân vật nằm ngay dưới target HRP
---  (-6.5 studs Y), bám thẳng X/Z target
 -- ══════════════════════════════════════
 task.spawn(function()
     while true do
         task.wait(0.05)
         if not _G.flag then continue end
 
-        -- pick target nếu chưa có hoặc target đã chết
         if not _G.player
         or not _G.player.Character
         or not _G.player.Character:FindFirstChild("HumanoidRootPart")
@@ -165,23 +202,30 @@ task.spawn(function()
                           and _G.player.Character:FindFirstChild("HumanoidRootPart")
         if not localHrp or not targetHrp then continue end
 
-        -- Bám thẳng vị trí target — không dự đoán, không trượt
         local targetPos  = targetHrp.Position
         local underTarget = Vector3.new(
             targetPos.X,
-            targetPos.Y - 6.5,
+            targetPos.Y - UNDER_OFFSET_Y,
             targetPos.Z
         )
-
-        -- Face 3D lên target, X/Z luôn trùng target
         localHrp.CFrame = CFrame.lookAt(underTarget, targetPos)
     end
 end)
 
+-- ══════════════════════════════════════
+--  AUTOFARM  —  M1 LOOP (riêng, spam click)
+-- ══════════════════════════════════════
+task.spawn(function()
+    while true do
+        task.wait(0.08)
+        if not _G.flag then continue end
+        if not _G.player then continue end
+        fireM1()
+    end
+end)
 
 -- ══════════════════════════════════════
 --  AUTOFARM  —  SKILL SPAM LOOP
---  G ulti every 5 s
 -- ══════════════════════════════════════
 task.spawn(function()
     local ultimateTimer = tick()
@@ -193,9 +237,10 @@ task.spawn(function()
         _G.striking = true
         spamSkills()
 
-        -- G ulti every 5 s
         if tick() - ultimateTimer >= 5 then
+            faceTarget()
             sendKey(true,  Enum.KeyCode.G) ; task.wait(0.02)
+            faceTarget()
             sendKey(false, Enum.KeyCode.G)
             ultimateTimer = tick()
         end
@@ -225,7 +270,6 @@ local window = Rayfield:CreateWindow({
     icon      = 0,
 })
 
--- ── Combat tab ────────────────────────
 local combatTab = window:CreateTab({ name = "Combat", icon = 10723415903 })
 
 combatTab:CreateToggle({
@@ -243,7 +287,7 @@ combatTab:CreateToggle({
 
 combatTab:CreateToggle({
     name         = "Look Above Map",
-    info         = "Camera nhìn từ trên xuống target khi farm — thấy được ai đang đứng dưới map",
+    info         = "Camera nhìn từ trên xuống target khi farm",
     currentValue = false,
     callback     = function(v)
         _G.lookAboveActive = v
