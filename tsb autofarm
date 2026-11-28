@@ -1,4 +1,8 @@
--- teleport fix
+-- ╔══════════════════════════════════════════════╗
+-- ║   TSB AutoFarm v4  |  catlazydev            ║
+-- ║   Under-target pos + skill spam + cam       ║
+-- ╚══════════════════════════════════════════════╝
+
 local Players             = game:GetService("Players")
 local RunService          = game:GetService("RunService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
@@ -8,58 +12,33 @@ local LocalPlayer         = Players.LocalPlayer
 -- ══════════════════════════════════════
 --  STATE
 -- ══════════════════════════════════════
-_G.flag                          = false
+_G.flag                          = false   -- master autofarm toggle
 _G.antiRagdollActive             = false
-_G.secondaryCreateTextButtonFlag = false
-_G.lookAboveActive               = false
-_G.xrayActive                    = false
+_G.secondaryCreateTextButtonFlag = false   -- auto block (F spam)
+_G.lookAboveActive               = false   -- look above map while farming
+_G.xrayActive                    = false   -- look above map (xray cam)
 
-_G.player            = nil
-_G.striking          = false
-_G.currentTrack      = nil
-_G.ragdollCheckDelay = 0.05
-
--- Kill tracking
-_G.killCount         = 0
-_G.sessionKills      = 0
-_G.trackedHealth     = {}   -- [player] = lastHP
-
--- ══════════════════════════════════════
---  TUNABLES
--- ══════════════════════════════════════
-local RANGE_OFFSET = 2       -- studs ngang từ target — 2 vừa đủ trong hitbox
-local UNDER_MAP_Y  = -6.5    -- sàn dưới map
-local MAX_Y_ABOVE  = -3.0    -- trần: Y không vượt mức này
+_G.player                        = nil
+_G.striking                      = false
+_G.currentTrack                  = nil
+_G.ragdollCheckDelay              = 0.05
 
 -- ══════════════════════════════════════
 --  HELPERS
 -- ══════════════════════════════════════
-
--- Ưu tiên enemy ít máu nhất còn sống
-local function getBestTarget()
-    local best, bestHP = nil, math.huge
+local function getRandomEnemy()
+    local list = {}
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= LocalPlayer
             and p.Character
             and p.Character:FindFirstChild("Humanoid")
             and p.Character.Humanoid.Health > 0
         then
-            local hp = p.Character.Humanoid.Health
-            if hp < bestHP then
-                bestHP = hp
-                best   = p
-            end
+            table.insert(list, p)
         end
     end
-    return best
-end
-
-local function isTargetValid(p)
-    return p
-        and p.Character
-        and p.Character:FindFirstChild("HumanoidRootPart")
-        and p.Character:FindFirstChild("Humanoid")
-        and p.Character.Humanoid.Health > 0
+    if #list == 0 then return nil end
+    return list[math.random(1, #list)]
 end
 
 local function sendKey(down, key)
@@ -71,59 +50,27 @@ local function sendMouse(down)
 end
 
 local function spamSkills()
+    -- Skills: 1 2 3 4 + LMB combo
     for _, key in ipairs({
         Enum.KeyCode.One, Enum.KeyCode.Two,
-        Enum.KeyCode.Three, Enum.KeyCode.Four,
+        Enum.KeyCode.Three, Enum.KeyCode.Four
     }) do
         if not _G.flag then break end
         sendKey(true,  key) ; task.wait(0.02)
         sendKey(false, key)
+        sendMouse(true)  ; task.wait(0.01)
+        sendMouse(false)
     end
+    -- extra LMB hit
+    sendMouse(true)  ; task.wait(0.01)
+    sendMouse(false)
 end
-
--- ══════════════════════════════════════
---  KILL DETECTION
---  Theo dõi HP target — khi về 0 → kill
--- ══════════════════════════════════════
-local killLabel = nil   -- Rayfield label ref (set after UI build)
-
-local function onKill(victimName)
-    _G.killCount    = _G.killCount + 1
-    _G.sessionKills = _G.sessionKills + 1
-    warn(string.format("[TSB Kill #%d] Killed: %s | Session: %d", _G.killCount, victimName, _G.sessionKills))
-    if killLabel and killLabel.Set then
-        killLabel:Set("Kills this session: " .. _G.sessionKills)
-    end
-end
-
--- Health watcher chạy liên tục
-task.spawn(function()
-    while true do
-        task.wait(0.1)
-        for _, p in ipairs(Players:GetPlayers()) do
-            if p == LocalPlayer then continue end
-            local hum = p.Character and p.Character:FindFirstChildOfClass("Humanoid")
-            if not hum then
-                _G.trackedHealth[p] = nil
-                continue
-            end
-            local hp = hum.Health
-            local prev = _G.trackedHealth[p]
-            if prev and prev > 0 and hp <= 0 then
-                if _G.flag then
-                    onKill(p.Name)
-                end
-                if _G.player == p then
-                    _G.player = nil
-                end
-            end
-            _G.trackedHealth[p] = hp
-        end
-    end
-end)
 
 -- ══════════════════════════════════════
 --  LOOK ABOVE MAP  (camera)
+--  When active: cam locks 14 studs above
+--  the target HRP so you see the fight
+--  from above-ground (xray view).
 -- ══════════════════════════════════════
 RunService.RenderStepped:Connect(function()
     local camera = Workspace.CurrentCamera
@@ -151,12 +98,12 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- ══════════════════════════════════════
---  AUTO BLOCK
+--  AUTO BLOCK  (F spam every 3 frames)
 -- ══════════════════════════════════════
 local blockFrameCounter = 0
 RunService.PreRender:Connect(function()
     if _G.secondaryCreateTextButtonFlag then
-        blockFrameCounter += 1
+        blockFrameCounter = blockFrameCounter + 1
         if blockFrameCounter % 3 == 0 then
             sendKey(false, Enum.KeyCode.F)
             return
@@ -193,70 +140,60 @@ task.spawn(function()
 end)
 
 -- ══════════════════════════════════════
---  AUTOFARM — POSITION LOOP
---  Đứng dưới map, sát target (RANGE_OFFSET studs ngang)
---  Face 3D lên target, Y kẹp dưới map
+--  AUTOFARM  —  POSITION LOOP
+--  nhân vật nằm ngay dưới target HRP
+--  (-6.5 studs Y), bám thẳng X/Z target
 -- ══════════════════════════════════════
 task.spawn(function()
     while true do
-        task.wait(0.08)
+        task.wait(0.05)
         if not _G.flag then continue end
 
-        if not isTargetValid(_G.player) then
-            _G.player = getBestTarget()
+        -- pick target nếu chưa có hoặc target đã chết
+        if not _G.player
+        or not _G.player.Character
+        or not _G.player.Character:FindFirstChild("HumanoidRootPart")
+        or _G.player.Character.Humanoid.Health <= 0
+        then
+            _G.player = getRandomEnemy()
             if not _G.player then task.wait(0.5) continue end
         end
 
-        local char      = LocalPlayer.Character
-        local localHrp  = char and char:FindFirstChild("HumanoidRootPart")
-        local targetHrp = _G.player.Character:FindFirstChild("HumanoidRootPart")
+        local char     = LocalPlayer.Character
+        local localHrp = char and char:FindFirstChild("HumanoidRootPart")
+        local targetHrp = _G.player.Character
+                          and _G.player.Character:FindFirstChild("HumanoidRootPart")
         if not localHrp or not targetHrp then continue end
 
-        -- Bám trực tiếp vị trí target (không dự đoán velocity → không overshoot)
-        local targetPos = targetHrp.Position
-
-        -- Offset ngang RANGE_OFFSET studs, hướng local → target
-        local flat = Vector3.new(
-            targetPos.X - localHrp.Position.X,
-            0,
-            targetPos.Z - localHrp.Position.Z
-        )
-        local dist = flat.Magnitude
-        local offsetDir
-        if dist > 0.1 then
-            offsetDir = flat.Unit * RANGE_OFFSET
-        else
-            offsetDir = Vector3.new(RANGE_OFFSET, 0, 0)
-        end
-
-        -- Y kẹp giữa sàn và trần (không trồi lên trên map)
-        local standY = math.clamp(targetPos.Y - 8, UNDER_MAP_Y, MAX_Y_ABOVE)
-
-        local standPos = Vector3.new(
-            targetPos.X - offsetDir.X,
-            standY,
-            targetPos.Z - offsetDir.Z
+        -- Bám thẳng vị trí target — không dự đoán, không trượt
+        local targetPos  = targetHrp.Position
+        local underTarget = Vector3.new(
+            targetPos.X,
+            targetPos.Y - 6.5,
+            targetPos.Z
         )
 
-        -- Face 3D về target — nhân vật hướng lên trên, không nhìn ngang
-        localHrp.CFrame = CFrame.lookAt(standPos, targetPos)
+        -- Face 3D lên target, X/Z luôn trùng target
+        localHrp.CFrame = CFrame.lookAt(underTarget, targetPos)
     end
 end)
 
+
 -- ══════════════════════════════════════
---  AUTOFARM — SKILL SPAM LOOP
+--  AUTOFARM  —  SKILL SPAM LOOP
+--  G ulti every 5 s
 -- ══════════════════════════════════════
 task.spawn(function()
     local ultimateTimer = tick()
     while true do
         task.wait(0.01)
         if not _G.flag then continue end
-        if not isTargetValid(_G.player) then continue end
+        if not _G.player then continue end
 
         _G.striking = true
         spamSkills()
 
-        -- G ulti mỗi 5s
+        -- G ulti every 5 s
         if tick() - ultimateTimer >= 5 then
             sendKey(true,  Enum.KeyCode.G) ; task.wait(0.02)
             sendKey(false, Enum.KeyCode.G)
@@ -269,19 +206,6 @@ task.spawn(function()
 end)
 
 -- ══════════════════════════════════════
---  AUTOFARM — M1 LOOP (độc lập)
--- ══════════════════════════════════════
-task.spawn(function()
-    while true do
-        task.wait(0.05)
-        if not _G.flag then continue end
-        if not isTargetValid(_G.player) then continue end
-        sendMouse(true)  ; task.wait(0.05)
-        sendMouse(false)
-    end
-end)
-
--- ══════════════════════════════════════
 --  RAYFIELD UI
 -- ══════════════════════════════════════
 local Rayfield = nil
@@ -290,23 +214,23 @@ repeat
         Rayfield = loadstring(game:HttpGet("https://sirius.menu/gen2"))()
     end)
     if not ok or not Rayfield then
-        warn("[TSB] Rayfield retry: " .. tostring(err))
+        warn("[TSB] Rayfield failed, retry in 1s... " .. tostring(err))
         task.wait(1)
     end
 until Rayfield ~= nil
 
 local window = Rayfield:CreateWindow({
-    name     = "TSB AutoFarm v3",
+    name     = "TSB AutoFarm v2",
     subtitle  = "catlazydev",
     icon      = 0,
 })
 
--- ── Combat tab ─────────────────────
+-- ── Combat tab ────────────────────────
 local combatTab = window:CreateTab({ name = "Combat", icon = 10723415903 })
 
 combatTab:CreateToggle({
     name         = "Auto Kill Farm",
-    info         = "Tự đứng dưới map sát target, spam skill + M1 liên tục",
+    info         = "Nằm dưới target, spam skill 1-4 + LMB tự động",
     currentValue = false,
     callback     = function(v)
         _G.flag = v
@@ -319,7 +243,7 @@ combatTab:CreateToggle({
 
 combatTab:CreateToggle({
     name         = "Look Above Map",
-    info         = "Camera nhìn từ trên xuống target — thấy vị trí dưới map",
+    info         = "Camera nhìn từ trên xuống target khi farm — thấy được ai đang đứng dưới map",
     currentValue = false,
     callback     = function(v)
         _G.lookAboveActive = v
@@ -329,7 +253,7 @@ combatTab:CreateToggle({
 
 combatTab:CreateToggle({
     name         = "Auto Block",
-    info         = "Spam F để block",
+    info         = "Spam phím F để block liên tục",
     currentValue = false,
     callback     = function(v)
         _G.secondaryCreateTextButtonFlag = v
@@ -355,53 +279,19 @@ combatTab:CreateSlider({
 combatTab:CreateButton({
     name     = "Pick New Target",
     callback = function()
-        _G.player = getBestTarget()
+        _G.player = getRandomEnemy()
         if _G.player then
             Rayfield:Notify({
-                title    = "Target Locked",
-                content  = _G.player.Name .. " — HP: " .. math.floor(_G.player.Character.Humanoid.Health),
+                title    = "Target",
+                content  = "Locked: " .. _G.player.Name,
                 duration = 3,
             })
         else
             Rayfield:Notify({
                 title    = "No Target",
-                content  = "Không có enemy sống",
+                content  = "Không tìm thấy enemy sống",
                 duration = 3,
             })
         end
-    end,
-})
-
-combatTab:CreateButton({
-    name     = "Reset Kill Count",
-    callback = function()
-        _G.sessionKills = 0
-        _G.killCount    = 0
-        if killLabel and killLabel.Set then
-            killLabel:Set("Kills this session: 0")
-        end
-        Rayfield:Notify({ title = "Reset", content = "Kill count cleared", duration = 2 })
-    end,
-})
-
--- ── Stats tab ──────────────────────
-local statsTab = window:CreateTab({ name = "Stats", icon = 10734951111 })
-
-killLabel = statsTab:CreateParagraph({
-    title   = "Kill Counter",
-    content = "Kills this session: 0",
-})
-
-statsTab:CreateButton({
-    name     = "Refresh Stats",
-    callback = function()
-        if killLabel and killLabel.Set then
-            killLabel:Set("Kills this session: " .. _G.sessionKills)
-        end
-        Rayfield:Notify({
-            title   = "Stats",
-            content = string.format("Session kills: %d", _G.sessionKills),
-            duration = 3,
-        })
     end,
 })
